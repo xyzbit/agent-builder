@@ -1,0 +1,2224 @@
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useLoaderData, useActionData, useNavigation, useFetcher, Form } from "@remix-run/react";
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import type { MetaFunction } from "@remix-run/node";
+
+// Global UI Components Import - ALWAYS include this entire block
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "~/components/ui/card";
+import { Input, FloatingLabelInput } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
+import { Badge } from "~/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
+import { Separator } from "~/components/ui/separator";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "~/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
+import { Checkbox } from "~/components/ui/checkbox";
+import { Switch } from "~/components/ui/switch";
+import { Textarea } from "~/components/ui/textarea";
+import { Progress } from "~/components/ui/progress";
+import { Slider } from "~/components/ui/slider";
+import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "~/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
+import { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "~/components/ui/table";
+import { Skeleton } from "~/components/ui/skeleton";
+import { Toggle } from "~/components/ui/toggle";
+
+// Pre-Built Section Components Import (HIGH IMPACT - USE THESE FIRST)
+import { NotFoundPage, DefaultNotFoundRoute } from "~/components/sections/not-found-page";
+
+// Utility Components Import
+import { GlassmorphicPanel } from "~/components/ui/glassmorphic-panel";
+import { GradientBackground } from "~/components/ui/gradient-background";
+import { AnimatedIcon } from "~/components/ui/animated-icon";
+import { ThemeProvider, ThemeToggle } from "~/components/ui/theme-provider";
+
+// Utility Functions
+import { cn } from "~/lib/utils";
+import { safeLucideIcon } from "~/components/ui/icon";
+import { useIsMobile } from "~/hooks/use-mobile";
+import { useToast } from "~/hooks/use-toast";
+
+export const meta: MetaFunction = () => {
+  return [
+    { title: "CLI Prompt Builder - Build Agent Workflows" },
+    { name: "description", content: "A command-line interface for building and configuring agent or agentic workflow prompts with guided operations and default settings." },
+  ];
+};
+
+// Types for our CLI application
+interface PromptTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  template: string;
+  parameters: PromptParameter[];
+  createdAt: string;
+}
+
+interface PromptParameter {
+  name: string;
+  type: 'string' | 'number' | 'boolean' | 'select';
+  description: string;
+  required: boolean;
+  defaultValue?: any;
+  options?: string[];
+}
+
+interface CLICommand {
+  command: string;
+  description: string;
+  example: string;
+  category: string;
+}
+
+interface Agent {
+  id: number;
+  name: string;
+  description: string;
+  type: "agent" | "workflow";
+  status: "draft" | "active" | "archived";
+  taskRequirements: string;
+  generatedPrompt?: string;
+  configuration?: any;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface Tool {
+  id: number;
+  name: string;
+  description: string;
+  category: string;
+  apiEndpoint?: string;
+  parameters?: any[];
+  isActive: boolean;
+  createdAt: Date;
+}
+
+interface UserSession {
+  id: number;
+  sessionId: string;
+  currentStep: string;
+  status: string;
+  context?: any;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface ProcessingResult {
+  response: string;
+  nextStep: string;
+  missingInfo: string[];
+  recommendations: string[];
+  confidence: number;
+  suggestions: string[];
+  isComplete: boolean;
+  followUpQuestions?: string[];
+}
+
+interface BestPractice {
+  id: number;
+  title: string;
+  description: string;
+  category: string;
+  type: string;
+  status: string;
+  tags: string[];
+  content: string;
+  examples?: any[];
+  relatedTools: string[];
+  difficulty: string;
+  estimatedTime: string;
+  benefits: string[];
+  commonMistakes: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface BestPracticeAnalysis {
+  taskComplexity: "simple" | "moderate" | "complex";
+  riskLevel: "low" | "medium" | "high";
+  suggestedApproach: string;
+  timeEstimate: string;
+  requiredSkills: string[];
+  potentialChallenges: string[];
+  recommendedPractices: Array<{
+    title: string;
+    priority: "high" | "medium" | "low";
+    reasoning: string;
+    category: string;
+  }>;
+  customRecommendations: string[];
+  confidence: number;
+}
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  try {
+    // Dynamic imports for storage
+    const { agentsStorage } = await import("~/lib/.server/agents.storage");
+    const { toolsStorage } = await import("~/lib/.server/tools.storage");
+    const { executionLogsStorage } = await import("~/lib/.server/execution-logs.storage");
+    const { userSessionsStorage } = await import("~/lib/.server/user-sessions.storage");
+    const { bestPracticesStorage } = await import("~/lib/.server/best-practices.storage");
+
+    // Load data for the SPA
+    const [agents, tools, recentLogs, recentSessions, bestPractices] = await Promise.all([
+      agentsStorage.getAgents(10),
+      toolsStorage.getActiveTools(),
+      executionLogsStorage.getRecentLogs(5),
+      userSessionsStorage.getRecentSessions(5),
+      bestPracticesStorage.getBestPractices(20)
+    ]);
+
+    // Mock data for CLI commands
+    const cliCommands: CLICommand[] = [
+      {
+        command: "agent create",
+        description: "Create a new agent configuration",
+        example: "agent create --name 'Data Analyzer' --type agent",
+        category: "Management"
+      },
+      {
+        command: "workflow create",
+        description: "Create a new workflow configuration",
+        example: "workflow create --name 'Code Review' --type workflow",
+        category: "Management"
+      },
+      {
+        command: "agent list",
+        description: "List all available agents",
+        example: "agent list --status active",
+        category: "Management"
+      },
+      {
+        command: "agent run",
+        description: "Execute an agent configuration",
+        example: "agent run --id 1 --input 'data.csv'",
+        category: "Execution"
+      },
+      {
+        command: "tools list",
+        description: "List available tools",
+        example: "tools list --category 'Data Analysis'",
+        category: "Tools"
+      },
+      {
+        command: "config validate",
+        description: "Validate agent configuration",
+        example: "config validate --agent-id 1",
+        category: "Configuration"
+      },
+      {
+        command: "guide start",
+        description: "Start interactive guidance session",
+        example: "guide start --task 'data analysis'",
+        category: "Guidance"
+      },
+      {
+        command: "best-practices analyze",
+        description: "Analyze requirements for best practices",
+        example: "best-practices analyze --requirements 'process CSV data'",
+        category: "Best Practices"
+      }
+    ];
+
+    return json({
+      agents,
+      tools,
+      recentLogs,
+      recentSessions,
+      bestPractices,
+      cliCommands,
+      stats: {
+        totalAgents: agents.length,
+        totalTools: tools.length,
+        activeAgents: agents.filter(a => a.status === 'active').length,
+        activeSessions: recentSessions.filter(s => s.status === 'active').length,
+        totalBestPractices: bestPractices.length,
+        lastUpdated: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error("Loader error:", error);
+    return json({
+      agents: [],
+      tools: [],
+      recentLogs: [],
+      recentSessions: [],
+      bestPractices: [],
+      cliCommands: [],
+      stats: {
+        totalAgents: 0,
+        totalTools: 0,
+        activeAgents: 0,
+        activeSessions: 0,
+        totalBestPractices: 0,
+        lastUpdated: new Date().toISOString()
+      },
+      error: "Failed to load data"
+    });
+  }
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  try {
+    // Dynamic imports for storage and AI
+    const { agentsStorage } = await import("~/lib/.server/agents.storage");
+    const { toolsStorage } = await import("~/lib/.server/tools.storage");
+    const { executionLogsStorage } = await import("~/lib/.server/execution-logs.storage");
+    const { userSessionsStorage } = await import("~/lib/.server/user-sessions.storage");
+    const { bestPracticesStorage } = await import("~/lib/.server/best-practices.storage");
+    const { aiGenerator } = await import("~/lib/.server/ai-generator");
+    const { inputProcessor } = await import("~/lib/.server/input-processor");
+
+    switch (intent) {
+      case "analyze_best_practices": {
+        const requirements = formData.get("requirements") as string;
+        const taskType = formData.get("taskType") as string || "general";
+        const selectedTools = JSON.parse(formData.get("selectedTools") as string || "[]");
+        
+        if (!requirements) {
+          return json({ 
+            error: "Requirements are required for best practice analysis",
+            success: false 
+          }, { status: 400 });
+        }
+
+        const analysis = await inputProcessor.provideBestPracticeRecommendations(
+          taskType,
+          requirements,
+          selectedTools
+        );
+        
+        if (!analysis) {
+          return json({ 
+            error: "Failed to analyze best practices",
+            success: false 
+          }, { status: 500 });
+        }
+
+        // Store the recommendation
+        await bestPracticesStorage.createRecommendation({
+          sessionId: `analysis_${Date.now()}`,
+          userInput: requirements,
+          taskType,
+          selectedTools,
+          recommendedPractices: [],
+          analysisResults: {
+            complexity: analysis.taskComplexity,
+            riskLevel: analysis.riskLevel,
+            suggestedApproach: analysis.suggestedApproach,
+            timeEstimate: analysis.timeEstimate,
+            requiredSkills: analysis.requiredSkills,
+            potentialChallenges: analysis.potentialChallenges
+          },
+          customRecommendations: analysis.customRecommendations,
+          confidence: analysis.confidence
+        });
+
+        return json({ 
+          success: true, 
+          message: "Best practice analysis completed",
+          analysis
+        });
+      }
+
+      case "search_best_practices": {
+        const query = formData.get("query") as string;
+        const category = formData.get("category") as string;
+        const type = formData.get("type") as string;
+        
+        let practices: BestPractice[] = [];
+        
+        if (query) {
+          practices = await bestPracticesStorage.searchBestPractices(query, 20);
+        } else if (category) {
+          practices = await bestPracticesStorage.getBestPracticesByCategory(category, 20);
+        } else if (type) {
+          practices = await bestPracticesStorage.getBestPracticesByType(type, 20);
+        } else {
+          practices = await bestPracticesStorage.getBestPractices(20);
+        }
+
+        return json({ 
+          success: true, 
+          practices,
+          message: `Found ${practices.length} best practices`
+        });
+      }
+
+      case "start_guidance_session": {
+        const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const taskType = formData.get("taskType") as string || "general";
+        
+        const session = await userSessionsStorage.createSession({
+          sessionId,
+          currentStep: "initial_input",
+          status: "active",
+          context: {
+            taskType,
+            requirements: [],
+            selectedTools: [],
+            missingInfo: [],
+            recommendations: [],
+            userResponses: {}
+          }
+        });
+
+        return json({ 
+          success: true, 
+          message: "Guidance session started",
+          sessionId: session.sessionId,
+          nextStep: "initial_input"
+        });
+      }
+
+      case "process_user_input": {
+        const sessionId = formData.get("sessionId") as string;
+        const userInput = formData.get("userInput") as string;
+        const inputType = formData.get("inputType") as string || "requirement";
+        
+        if (!sessionId || !userInput) {
+          return json({ 
+            error: "Session ID and user input are required",
+            success: false 
+          }, { status: 400 });
+        }
+
+        // Get current session
+        const session = await userSessionsStorage.getSessionWithInteractions(sessionId);
+        if (!session) {
+          return json({ 
+            error: "Session not found",
+            success: false 
+          }, { status: 404 });
+        }
+
+        // Get available tools
+        const tools = await toolsStorage.getActiveTools();
+        const toolNames = tools.map(t => t.name);
+
+        // Process user input with AI
+        const processingResult = await inputProcessor.processUserInput(
+          userInput,
+          {
+            sessionId: session.sessionId,
+            currentStep: session.currentStep,
+            taskType: session.context?.taskType,
+            requirements: session.context?.requirements || [],
+            selectedTools: session.context?.selectedTools || [],
+            missingInfo: session.context?.missingInfo || [],
+            userResponses: session.context?.userResponses || {}
+          },
+          toolNames
+        );
+
+        if (!processingResult) {
+          return json({ 
+            error: "Failed to process user input",
+            success: false 
+          }, { status: 500 });
+        }
+
+        // Add interaction to database
+        await userSessionsStorage.addInteraction({
+          sessionId,
+          userInput,
+          aiResponse: processingResult.response,
+          inputType,
+          metadata: {
+            confidence: processingResult.confidence,
+            suggestions: processingResult.suggestions,
+            nextSteps: [processingResult.nextStep],
+            validationResults: {
+              missingInfo: processingResult.missingInfo,
+              recommendations: processingResult.recommendations,
+              isComplete: processingResult.isComplete
+            }
+          }
+        });
+
+        // Update session context
+        const updatedContext = {
+          ...session.context,
+          requirements: [
+            ...(session.context?.requirements || []),
+            userInput
+          ],
+          missingInfo: processingResult.missingInfo,
+          recommendations: processingResult.recommendations,
+          userResponses: {
+            ...(session.context?.userResponses || {}),
+            [inputType]: userInput
+          }
+        };
+
+        await userSessionsStorage.updateSession(sessionId, {
+          currentStep: processingResult.nextStep,
+          context: updatedContext
+        });
+
+        return json({ 
+          success: true, 
+          message: "Input processed successfully",
+          processingResult,
+          sessionUpdated: true
+        });
+      }
+
+      case "analyze_requirements": {
+        const requirements = formData.get("requirements") as string;
+        
+        if (!requirements) {
+          return json({ 
+            error: "Requirements are required for analysis",
+            success: false 
+          }, { status: 400 });
+        }
+
+        const analysis = await inputProcessor.analyzeRequirements(requirements);
+        
+        if (!analysis) {
+          return json({ 
+            error: "Failed to analyze requirements",
+            success: false 
+          }, { status: 500 });
+        }
+
+        return json({ 
+          success: true, 
+          message: "Requirements analyzed successfully",
+          analysis
+        });
+      }
+
+      case "get_recommendations": {
+        const taskType = formData.get("taskType") as string;
+        const requirements = formData.get("requirements") as string;
+        const selectedTools = JSON.parse(formData.get("selectedTools") as string || "[]");
+        
+        if (!taskType || !requirements) {
+          return json({ 
+            error: "Task type and requirements are required",
+            success: false 
+          }, { status: 400 });
+        }
+
+        const recommendations = await inputProcessor.provideBestPracticeRecommendations(
+          taskType,
+          requirements,
+          selectedTools
+        );
+        
+        if (!recommendations) {
+          return json({ 
+            error: "Failed to generate recommendations",
+            success: false 
+          }, { status: 500 });
+        }
+
+        return json({ 
+          success: true, 
+          message: "Recommendations generated successfully",
+          recommendations
+        });
+      }
+
+      case "generate_agent":
+      case "generate_workflow": {
+        const name = formData.get("name") as string;
+        const description = formData.get("description") as string;
+        const taskRequirements = formData.get("taskRequirements") as string;
+        const selectedTools = JSON.parse(formData.get("selectedTools") as string || "[]");
+        const type = intent === "generate_agent" ? "agent" : "workflow";
+        
+        if (!name || !description || !taskRequirements) {
+          return json({ 
+            error: "Missing required fields: name, description, and task requirements are required",
+            success: false 
+          }, { status: 400 });
+        }
+
+        // Validate configuration first
+        const validation = await aiGenerator.validateConfiguration(taskRequirements, selectedTools);
+        
+        if (!validation.isComplete) {
+          return json({
+            success: false,
+            validation,
+            message: "Configuration needs improvement before generation"
+          });
+        }
+
+        // Generate agent/workflow
+        const generationRequest = {
+          type,
+          taskRequirements,
+          tools: selectedTools,
+          additionalContext: description
+        };
+
+        const aiResponse = type === "agent" 
+          ? await aiGenerator.generateAgent(generationRequest)
+          : await aiGenerator.generateWorkflow(generationRequest);
+
+        if (!aiResponse) {
+          return json({ 
+            error: "Failed to generate configuration. Please try again.",
+            success: false 
+          }, { status: 500 });
+        }
+
+        // Create agent in database
+        const newAgent = await agentsStorage.createAgent({
+          name,
+          description,
+          type,
+          taskRequirements,
+          generatedPrompt: aiResponse.prompt,
+          configuration: aiResponse.configuration,
+          status: "draft"
+        });
+
+        return json({ 
+          success: true, 
+          message: `${type.charAt(0).toUpperCase() + type.slice(1)} generated successfully`,
+          agent: newAgent,
+          aiResponse
+        });
+      }
+
+      case "validate_config": {
+        const taskRequirements = formData.get("taskRequirements") as string;
+        const selectedTools = JSON.parse(formData.get("selectedTools") as string || "[]");
+        
+        if (!taskRequirements) {
+          return json({ 
+            error: "Task requirements are required for validation",
+            success: false 
+          }, { status: 400 });
+        }
+
+        const validation = await aiGenerator.validateConfiguration(taskRequirements, selectedTools);
+        
+        return json({ 
+          success: true, 
+          validation,
+          message: validation.isComplete ? "Configuration is complete" : "Configuration needs improvement"
+        });
+      }
+
+      case "run_command": {
+        const command = formData.get("command") as string;
+        const agentId = formData.get("agentId") ? parseInt(formData.get("agentId") as string) : null;
+        
+        if (!command) {
+          return json({ 
+            error: "Command is required",
+            success: false 
+          }, { status: 400 });
+        }
+
+        const startTime = Date.now();
+        let result = "";
+        let status = "success";
+
+        try {
+          // Process different commands
+          if (command.startsWith("agent list")) {
+            const agents = await agentsStorage.getAgents(10);
+            result = `Found ${agents.length} agents:\n` + 
+                    agents.map(a => `  ${a.id}. ${a.name} (${a.type}) - ${a.status}`).join('\n');
+          } else if (command.startsWith("tools list")) {
+            const tools = await toolsStorage.getActiveTools();
+            result = `Found ${tools.length} active tools:\n` + 
+                    tools.map(t => `  - ${t.name}: ${t.description}`).join('\n');
+          } else if (command.startsWith("best-practices list")) {
+            const practices = await bestPracticesStorage.getBestPractices(10);
+            result = `Found ${practices.length} best practices:\n` + 
+                    practices.map(p => `  - ${p.title} (${p.category}): ${p.description}`).join('\n');
+          } else if (command.startsWith("best-practices analyze")) {
+            const requirements = command.split("--requirements")[1]?.trim().replace(/['"]/g, "") || "";
+            if (requirements) {
+              const analysis = await inputProcessor.analyzeRequirements(requirements);
+              if (analysis) {
+                result = `Analysis Results:\n` +
+                        `Complexity: ${analysis.taskComplexity}\n` +
+                        `Risk Level: ${analysis.riskLevel}\n` +
+                        `Approach: ${analysis.suggestedApproach}\n` +
+                        `Time Estimate: ${analysis.timeEstimate}\n` +
+                        `Required Skills: ${analysis.requiredSkills.join(", ")}\n` +
+                        `Recommendations: ${analysis.customRecommendations.join("; ")}`;
+              } else {
+                result = "Failed to analyze requirements";
+                status = "error";
+              }
+            } else {
+              result = "Error: --requirements parameter is required";
+              status = "error";
+            }
+          } else if (command.startsWith("guide start")) {
+            const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            await userSessionsStorage.createSession({
+              sessionId,
+              currentStep: "initial_input",
+              status: "active",
+              context: {
+                taskType: "general",
+                requirements: [],
+                selectedTools: [],
+                missingInfo: [],
+                recommendations: [],
+                userResponses: {}
+              }
+            });
+            result = `Interactive guidance session started: ${sessionId}\nType your requirements to begin...`;
+          } else if (command.startsWith("agent run") && agentId) {
+            const agent = await agentsStorage.getAgentById(agentId);
+            if (agent) {
+              result = `Executing agent: ${agent.name}\nType: ${agent.type}\nStatus: Running...\nCompleted successfully`;
+            } else {
+              result = `Error: Agent with ID ${agentId} not found`;
+              status = "error";
+            }
+          } else {
+            result = `Command executed: ${command}\nOutput: Command processed successfully`;
+          }
+        } catch (error) {
+          result = `Error executing command: ${error instanceof Error ? error.message : String(error)}`;
+          status = "error";
+        }
+
+        const executionTime = Date.now() - startTime;
+
+        // Log the execution
+        if (agentId) {
+          await executionLogsStorage.createLog({
+            agentId,
+            command,
+            parameters: {},
+            result,
+            status,
+            executionTime
+          });
+        }
+
+        return json({ 
+          success: status === "success", 
+          message: "Command executed",
+          output: result,
+          executionTime
+        });
+      }
+
+      case "update_agent": {
+        const id = parseInt(formData.get("id") as string);
+        const status = formData.get("status") as string;
+        
+        if (!id) {
+          return json({ 
+            error: "Agent ID is required",
+            success: false 
+          }, { status: 400 });
+        }
+
+        const updatedAgent = await agentsStorage.updateAgent(id, { status: status as any });
+        
+        return json({ 
+          success: true, 
+          message: "Agent updated successfully",
+          agent: updatedAgent
+        });
+      }
+
+      case "delete_agent": {
+        const id = parseInt(formData.get("id") as string);
+        
+        if (!id) {
+          return json({ 
+            error: "Agent ID is required",
+            success: false 
+          }, { status: 400 });
+        }
+
+        await agentsStorage.deleteAgent(id);
+        
+        return json({ 
+          success: true, 
+          message: "Agent deleted successfully"
+        });
+      }
+
+      default:
+        return json({ 
+          error: "Unknown action",
+          success: false 
+        }, { status: 400 });
+    }
+  } catch (error) {
+    console.error("Action error:", error);
+    return json({ 
+      error: "Internal server error: " + (error instanceof Error ? error.message : String(error)),
+      success: false 
+    }, { status: 500 });
+  }
+};
+
+export default function Index() {
+  const { agents, tools, recentLogs, recentSessions, bestPractices, cliCommands, stats, error } = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
+  const { toast } = useToast();
+  const isMobile = useIsMobile();
+
+  // SPA state management
+  const [activeView, setActiveView] = useState<'dashboard' | 'agents' | 'builder' | 'terminal' | 'guidance' | 'best-practices' | 'docs'>('dashboard');
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [terminalHistory, setTerminalHistory] = useState<string[]>([
+    "Welcome to CLI Prompt Builder v1.0.0",
+    "Type 'help' for available commands",
+    "Type 'guide start' to begin interactive guidance",
+    "Type 'best-practices list' to view best practices",
+    ""
+  ]);
+  const [currentCommand, setCurrentCommand] = useState("");
+  const [isTerminalActive, setIsTerminalActive] = useState(false);
+  const [selectedTools, setSelectedTools] = useState<string[]>([]);
+  const [generationType, setGenerationType] = useState<"agent" | "workflow">("agent");
+
+  // Guidance state
+  const [currentSession, setCurrentSession] = useState<string | null>(null);
+  const [guidanceHistory, setGuidanceHistory] = useState<Array<{
+    type: 'user' | 'ai';
+    content: string;
+    timestamp: Date;
+    metadata?: any;
+  }>>([]);
+  const [currentInput, setCurrentInput] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [currentStep, setCurrentStep] = useState("initial_input");
+  const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null);
+
+  // Best practices state
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [selectedType, setSelectedType] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [analysisResult, setAnalysisResult] = useState<BestPracticeAnalysis | null>(null);
+  const [analysisRequirements, setAnalysisRequirements] = useState("");
+
+  const isSubmitting = navigation.state === "submitting";
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const guidanceRef = useRef<HTMLDivElement>(null);
+
+  // Handle action responses
+  useEffect(() => {
+    if (actionData?.success) {
+      toast({
+        title: "Success",
+        description: actionData.message,
+        duration: 3000,
+      });
+      
+      if (actionData.output) {
+        setTerminalHistory(prev => [...prev, actionData.output, ""]);
+      }
+      
+      if (actionData.sessionId) {
+        setCurrentSession(actionData.sessionId);
+        setGuidanceHistory([{
+          type: 'ai',
+          content: "Hello! I'm here to help you build the perfect agent or workflow. What would you like to create today?",
+          timestamp: new Date()
+        }]);
+      }
+
+      if (actionData.processingResult) {
+        setProcessingResult(actionData.processingResult);
+        setGuidanceHistory(prev => [...prev, {
+          type: 'ai',
+          content: actionData.processingResult.response,
+          timestamp: new Date(),
+          metadata: actionData.processingResult
+        }]);
+      }
+
+      if (actionData.analysis) {
+        setAnalysisResult(actionData.analysis);
+      }
+      
+      if (activeView === 'builder') {
+        setIsCreateModalOpen(false);
+        setSelectedTools([]);
+      }
+    } else if (actionData?.error) {
+      toast({
+        title: "Error",
+        description: actionData.error,
+        duration: 5000,
+        variant: "destructive"
+      });
+    }
+  }, [actionData, toast, activeView]);
+
+  // Terminal command handler
+  const handleTerminalCommand = useCallback((command: string) => {
+    if (!command.trim()) return;
+
+    const newHistory = [...terminalHistory, `$ ${command}`];
+    
+    // Simple command processing
+    if (command === "help") {
+      newHistory.push("Available commands:");
+      cliCommands.forEach(cmd => {
+        newHistory.push(`  ${cmd.command} - ${cmd.description}`);
+      });
+    } else if (command === "clear") {
+      setTerminalHistory(["Welcome to CLI Prompt Builder v1.0.0", "Type 'help' for available commands", ""]);
+      setCurrentCommand("");
+      return;
+    } else if (command.startsWith("agent list")) {
+      newHistory.push("Available agents:");
+      agents.forEach((agent, index) => {
+        newHistory.push(`  ${index + 1}. ${agent.name} (${agent.type}) - ${agent.status}`);
+      });
+    } else if (command.startsWith("tools list")) {
+      newHistory.push("Available tools:");
+      tools.forEach((tool, index) => {
+        newHistory.push(`  ${index + 1}. ${tool.name} - ${tool.description}`);
+      });
+    } else if (command.startsWith("best-practices")) {
+      newHistory.push("Available best practices:");
+      bestPractices.slice(0, 5).forEach((practice, index) => {
+        newHistory.push(`  ${index + 1}. ${practice.title} (${practice.category})`);
+      });
+    } else {
+      // Submit command to server
+      const fetcher = useFetcher();
+      fetcher.submit(
+        { intent: "run_command", command },
+        { method: "POST" }
+      );
+      newHistory.push(`Executing: ${command}...`);
+    }
+    
+    newHistory.push("");
+    setTerminalHistory(newHistory);
+    setCurrentCommand("");
+  }, [terminalHistory, cliCommands, agents, tools, bestPractices]);
+
+  // Guidance input handler
+  const handleGuidanceInput = useCallback(async (input: string) => {
+    if (!input.trim() || isProcessing) return;
+
+    setIsProcessing(true);
+    setCurrentInput("");
+
+    // Add user input to history
+    const userMessage = {
+      type: 'user' as const,
+      content: input,
+      timestamp: new Date()
+    };
+    setGuidanceHistory(prev => [...prev, userMessage]);
+
+    try {
+      let sessionId = currentSession;
+      
+      // Start new session if none exists
+      if (!sessionId) {
+        const fetcher = useFetcher();
+        const response = await fetch('/', {
+          method: 'POST',
+          body: new URLSearchParams({
+            intent: 'start_guidance_session',
+            taskType: 'general'
+          })
+        });
+        const data = await response.json();
+        if (data.success) {
+          sessionId = data.sessionId;
+          setCurrentSession(sessionId);
+        }
+      }
+
+      if (sessionId) {
+        // Process user input
+        const fetcher = useFetcher();
+        fetcher.submit({
+          intent: "process_user_input",
+          sessionId,
+          userInput: input,
+          inputType: currentStep
+        }, { method: "POST" });
+      }
+    } catch (error) {
+      console.error("Error processing guidance input:", error);
+      setGuidanceHistory(prev => [...prev, {
+        type: 'ai',
+        content: "I'm sorry, I encountered an error processing your input. Please try again.",
+        timestamp: new Date()
+      }]);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [currentSession, currentStep, isProcessing]);
+
+  // Best practices search handler
+  const handleBestPracticesSearch = useCallback(() => {
+    const fetcher = useFetcher();
+    fetcher.submit({
+      intent: "search_best_practices",
+      query: searchQuery,
+      category: selectedCategory !== "all" ? selectedCategory : "",
+      type: selectedType !== "all" ? selectedType : ""
+    }, { method: "POST" });
+  }, [searchQuery, selectedCategory, selectedType]);
+
+  // Best practices analysis handler
+  const handleAnalyzeRequirements = useCallback(() => {
+    if (!analysisRequirements.trim()) return;
+    
+    const fetcher = useFetcher();
+    fetcher.submit({
+      intent: "analyze_best_practices",
+      requirements: analysisRequirements,
+      taskType: "general",
+      selectedTools: JSON.stringify(selectedTools)
+    }, { method: "POST" });
+  }, [analysisRequirements, selectedTools]);
+
+  // Auto-scroll terminal and guidance
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [terminalHistory]);
+
+  useEffect(() => {
+    if (guidanceRef.current) {
+      guidanceRef.current.scrollTop = guidanceRef.current.scrollHeight;
+    }
+  }, [guidanceHistory]);
+
+  // Show error state if data loading failed
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-cli-dark via-cli-bg to-cli-terminal flex items-center justify-center">
+        <Alert className="max-w-md bg-cli-terminal/50 border-cli-coral/30">
+          <AlertTitle className="text-cli-coral font-mono">System Error</AlertTitle>
+          <AlertDescription className="text-cli-yellow font-mono">
+            Failed to load application data. Please refresh the page.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-cli-dark via-cli-bg to-cli-terminal">
+      {/* Header */}
+      <div className="-mx-6 -mt-6 border-b border-cli-teal/20 bg-cli-terminal/90 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              {safeLucideIcon('Terminal', 'h-8 w-8 text-cli-teal')}
+              <h1 className="font-mono text-xl font-bold text-cli-teal">CLI Prompt Builder</h1>
+            </div>
+            <Badge variant="outline" className="border-cli-coral text-cli-coral font-mono text-xs">
+              v1.0.0
+            </Badge>
+          </div>
+          
+          <nav className="hidden md:flex items-center gap-6">
+            <button 
+              onClick={() => setActiveView("dashboard")}
+              className={cn(
+                "font-mono text-sm transition-colors px-3 py-2 rounded-md",
+                activeView === "dashboard" 
+                  ? "bg-cli-teal text-white" 
+                  : "text-cli-teal hover:bg-cli-teal/10"
+              )}
+            >
+              {safeLucideIcon('BarChart3', 'mr-2 h-4 w-4')}
+              Dashboard
+            </button>
+            <button 
+              onClick={() => setActiveView("agents")}
+              className={cn(
+                "font-mono text-sm transition-colors px-3 py-2 rounded-md",
+                activeView === "agents" 
+                  ? "bg-cli-teal text-white" 
+                  : "text-cli-teal hover:bg-cli-teal/10"
+              )}
+            >
+              {safeLucideIcon('Bot', 'mr-2 h-4 w-4')}
+              Agents
+            </button>
+            <button 
+              onClick={() => setActiveView("builder")}
+              className={cn(
+                "font-mono text-sm transition-colors px-3 py-2 rounded-md",
+                activeView === "builder" 
+                  ? "bg-cli-teal text-white" 
+                  : "text-cli-teal hover:bg-cli-teal/10"
+              )}
+            >
+              {safeLucideIcon('Wrench', 'mr-2 h-4 w-4')}
+              Builder
+            </button>
+            <button 
+              onClick={() => setActiveView("guidance")}
+              className={cn(
+                "font-mono text-sm transition-colors px-3 py-2 rounded-md",
+                activeView === "guidance" 
+                  ? "bg-cli-teal text-white" 
+                  : "text-cli-teal hover:bg-cli-teal/10"
+              )}
+            >
+              {safeLucideIcon('MessageSquare', 'mr-2 h-4 w-4')}
+              AI Guidance
+            </button>
+            <button 
+              onClick={() => setActiveView("best-practices")}
+              className={cn(
+                "font-mono text-sm transition-colors px-3 py-2 rounded-md",
+                activeView === "best-practices" 
+                  ? "bg-cli-teal text-white" 
+                  : "text-cli-teal hover:bg-cli-teal/10"
+              )}
+            >
+              {safeLucideIcon('Lightbulb', 'mr-2 h-4 w-4')}
+              Best Practices
+            </button>
+            <button 
+              onClick={() => setActiveView("terminal")}
+              className={cn(
+                "font-mono text-sm transition-colors px-3 py-2 rounded-md",
+                activeView === "terminal" 
+                  ? "bg-cli-teal text-white" 
+                  : "text-cli-teal hover:bg-cli-teal/10"
+              )}
+            >
+              {safeLucideIcon('Terminal', 'mr-2 h-4 w-4')}
+              Terminal
+            </button>
+            <button 
+              onClick={() => setActiveView("docs")}
+              className={cn(
+                "font-mono text-sm transition-colors px-3 py-2 rounded-md",
+                activeView === "docs" 
+                  ? "bg-cli-teal text-white" 
+                  : "text-cli-teal hover:bg-cli-teal/10"
+              )}
+            >
+              {safeLucideIcon('Book', 'mr-2 h-4 w-4')}
+              Docs
+            </button>
+          </nav>
+
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            {safeLucideIcon('Settings', 'h-5 w-5 text-cli-coral cursor-pointer hover:text-cli-yellow transition-colors')}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto py-8">
+        {/* Dashboard View */}
+        {activeView === 'dashboard' && (
+          <div className="space-y-8">
+            {/* Hero Section */}
+            <div className="text-center space-y-6">
+              <div className="relative">
+                <div 
+                  className="absolute inset-0 bg-cover bg-center opacity-10 rounded-3xl"
+                  style={{
+                    backgroundImage: 'url(https://images.pexels.com/photos/546819/pexels-photo-546819.jpeg?auto=compress&cs=tinysrgb&w=1200)'
+                  }}
+                />
+                <div className="relative p-12 bg-cli-terminal/80 backdrop-blur-sm border border-cli-teal/30 shadow-terminal rounded-3xl">
+                  <h1 className="text-4xl md:text-6xl font-mono font-bold text-cli-teal mb-4">
+                    <span className="animate-typing overflow-hidden whitespace-nowrap border-r-4 border-cli-coral">
+                      CLI Prompt Builder
+                    </span>
+                  </h1>
+                  <p className="text-lg text-cli-yellow max-w-2xl mx-auto font-mono leading-relaxed">
+                    Build and configure agent workflows with AI-powered guidance and interactive assistance. 
+                    Get personalized recommendations and step-by-step support.
+                  </p>
+                  <div className="flex gap-4 justify-center mt-8">
+                    <Button 
+                      onClick={() => setActiveView("guidance")}
+                      className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono px-8 py-3 text-lg shadow-cli-glow"
+                    >
+                      {safeLucideIcon('MessageSquare', 'mr-2 h-5 w-5')}
+                      Start AI Guidance
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => setActiveView("best-practices")}
+                      className="border-cli-yellow text-cli-yellow hover:bg-cli-yellow/10 font-mono px-8 py-3 text-lg"
+                    >
+                      {safeLucideIcon('Lightbulb', 'mr-2 h-5 w-5')}
+                      Best Practices
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+              <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-cli-yellow font-mono text-sm">Total Agents</p>
+                      <p className="text-3xl font-mono font-bold text-cli-teal">{stats.totalAgents}</p>
+                    </div>
+                    <div className="w-12 h-12 bg-cli-teal/20 rounded-lg flex items-center justify-center">
+                      {safeLucideIcon('Bot', 'h-6 w-6 text-cli-teal')}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-cli-terminal/50 border-cli-coral/30 shadow-terminal">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-cli-yellow font-mono text-sm">Active Agents</p>
+                      <p className="text-3xl font-mono font-bold text-cli-coral">{stats.activeAgents}</p>
+                    </div>
+                    <div className="w-12 h-12 bg-cli-coral/20 rounded-lg flex items-center justify-center">
+                      {safeLucideIcon('Activity', 'h-6 w-6 text-cli-coral')}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-cli-terminal/50 border-cli-yellow/30 shadow-terminal">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-cli-yellow font-mono text-sm">Available Tools</p>
+                      <p className="text-3xl font-mono font-bold text-cli-yellow">{stats.totalTools}</p>
+                    </div>
+                    <div className="w-12 h-12 bg-cli-yellow/20 rounded-lg flex items-center justify-center">
+                      {safeLucideIcon('Wrench', 'h-6 w-6 text-cli-yellow')}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-cli-terminal/50 border-cli-green/30 shadow-terminal">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-cli-yellow font-mono text-sm">Active Sessions</p>
+                      <p className="text-3xl font-mono font-bold text-cli-green">{stats.activeSessions}</p>
+                    </div>
+                    <div className="w-12 h-12 bg-cli-green/20 rounded-lg flex items-center justify-center">
+                      {safeLucideIcon('MessageSquare', 'h-6 w-6 text-cli-green')}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-cli-terminal/50 border-cli-amber/30 shadow-terminal">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-cli-yellow font-mono text-sm">Best Practices</p>
+                      <p className="text-3xl font-mono font-bold text-cli-amber">{stats.totalBestPractices}</p>
+                    </div>
+                    <div className="w-12 h-12 bg-cli-amber/20 rounded-lg flex items-center justify-center">
+                      {safeLucideIcon('Lightbulb', 'h-6 w-6 text-cli-amber')}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Recent Agents */}
+            <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal">
+              <CardHeader>
+                <CardTitle className="text-cli-teal font-mono flex items-center gap-2">
+                  {safeLucideIcon('Clock', 'h-5 w-5')}
+                  Recent Agents
+                </CardTitle>
+                <CardDescription className="text-cli-yellow font-mono">
+                  Your recently created agents and workflows
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {agents.slice(0, 3).map((agent) => (
+                    <div key={agent.id} className="flex items-center justify-between p-4 bg-cli-bg/50 rounded-lg border border-cli-teal/20">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-cli-teal/20 rounded-lg flex items-center justify-center">
+                          {safeLucideIcon(agent.type === 'agent' ? 'Bot' : 'GitBranch', 'h-5 w-5 text-cli-teal')}
+                        </div>
+                        <div>
+                          <h3 className="font-mono font-semibold text-cli-teal">{agent.name}</h3>
+                          <p className="text-sm text-cli-yellow font-mono">{agent.description}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="border-cli-coral text-cli-coral font-mono">
+                          {agent.type}
+                        </Badge>
+                        <Badge variant="outline" className={cn(
+                          "font-mono",
+                          agent.status === 'active' ? "border-cli-green text-cli-green" : "border-cli-yellow text-cli-yellow"
+                        )}>
+                          {agent.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Best Practices View */}
+        {activeView === 'best-practices' && (
+          <div className="space-y-6">
+            <div className="text-center space-y-4">
+              <h2 className="text-3xl font-mono font-bold text-cli-teal">Best Practice Recommendations</h2>
+              <p className="text-cli-yellow font-mono">Analyze requirements and get AI-powered recommendations for optimal workflows</p>
+            </div>
+
+            {/* Analysis Section */}
+            <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal">
+              <CardHeader>
+                <CardTitle className="text-cli-teal font-mono flex items-center gap-2">
+                  {safeLucideIcon('Brain', 'h-5 w-5')}
+                  Requirements Analysis
+                </CardTitle>
+                <CardDescription className="text-cli-yellow font-mono">
+                  Describe your task requirements to get personalized best practice recommendations
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-cli-yellow font-mono">Task Requirements</Label>
+                    <Textarea 
+                      value={analysisRequirements}
+                      onChange={(e) => setAnalysisRequirements(e.target.value)}
+                      placeholder="Describe what you want to build. Be specific about inputs, outputs, and expected behavior..."
+                      rows={4}
+                      className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono focus:border-cli-coral resize-none"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label className="text-cli-yellow font-mono">Selected Tools (Optional)</Label>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-32 overflow-y-auto p-4 bg-cli-bg/30 rounded-lg border border-cli-teal/20">
+                      {tools.slice(0, 12).map((tool) => (
+                        <div key={tool.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`analysis-tool-${tool.id}`}
+                            checked={selectedTools.includes(tool.name)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedTools([...selectedTools, tool.name]);
+                              } else {
+                                setSelectedTools(selectedTools.filter(t => t !== tool.name));
+                              }
+                            }}
+                            className="border-cli-teal/50"
+                          />
+                          <Label 
+                            htmlFor={`analysis-tool-${tool.id}`} 
+                            className="text-cli-teal font-mono text-sm cursor-pointer"
+                          >
+                            {tool.name}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Button 
+                    onClick={handleAnalyzeRequirements}
+                    disabled={!analysisRequirements.trim() || isSubmitting}
+                    className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono shadow-cli-glow"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        {safeLucideIcon('Loader2', 'mr-2 h-4 w-4 animate-spin')}
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        {safeLucideIcon('Sparkles', 'mr-2 h-4 w-4')}
+                        Analyze Requirements
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Analysis Results */}
+                {analysisResult && (
+                  <div className="mt-6 p-6 bg-cli-bg/50 rounded-lg border border-cli-teal/20">
+                    <h4 className="font-mono font-semibold text-cli-teal mb-4 flex items-center gap-2">
+                      {safeLucideIcon('CheckCircle', 'h-5 w-5')}
+                      Analysis Results
+                    </h4>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-cli-yellow font-mono text-sm mb-2">Task Assessment</p>
+                          <div className="space-y-2">
+                            <div className="flex justify-between">
+                              <span className="text-cli-green font-mono text-sm">Complexity:</span>
+                              <Badge variant="outline" className={cn(
+                                "font-mono text-xs",
+                                analysisResult.taskComplexity === 'simple' ? "border-cli-green text-cli-green" :
+                                analysisResult.taskComplexity === 'moderate' ? "border-cli-yellow text-cli-yellow" :
+                                "border-cli-coral text-cli-coral"
+                              )}>
+                                {analysisResult.taskComplexity}
+                              </Badge>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-cli-green font-mono text-sm">Risk Level:</span>
+                              <Badge variant="outline" className={cn(
+                                "font-mono text-xs",
+                                analysisResult.riskLevel === 'low' ? "border-cli-green text-cli-green" :
+                                analysisResult.riskLevel === 'medium' ? "border-cli-yellow text-cli-yellow" :
+                                "border-cli-coral text-cli-coral"
+                              )}>
+                                {analysisResult.riskLevel}
+                              </Badge>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-cli-green font-mono text-sm">Time Estimate:</span>
+                              <span className="text-cli-teal font-mono text-sm">{analysisResult.timeEstimate}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-cli-yellow font-mono text-sm mb-2">Required Skills</p>
+                          <div className="flex flex-wrap gap-2">
+                            {analysisResult.requiredSkills.map((skill, index) => (
+                              <Badge key={index} variant="outline" className="border-cli-teal text-cli-teal font-mono text-xs">
+                                {skill}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-cli-yellow font-mono text-sm mb-2">Suggested Approach</p>
+                          <p className="text-cli-green font-mono text-sm bg-cli-terminal/50 p-3 rounded border border-cli-teal/20">
+                            {analysisResult.suggestedApproach}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-cli-yellow font-mono text-sm mb-2">Confidence Score</p>
+                          <div className="flex items-center gap-2">
+                            <Progress value={analysisResult.confidence} className="flex-1" />
+                            <span className="text-cli-green font-mono text-sm">{analysisResult.confidence}%</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {analysisResult.potentialChallenges.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-cli-coral font-mono text-sm mb-2">Potential Challenges</p>
+                        <ul className="list-disc list-inside space-y-1">
+                          {analysisResult.potentialChallenges.map((challenge, index) => (
+                            <li key={index} className="text-cli-yellow font-mono text-sm">{challenge}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {analysisResult.customRecommendations.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-cli-teal font-mono text-sm mb-2">Custom Recommendations</p>
+                        <ul className="list-disc list-inside space-y-1">
+                          {analysisResult.customRecommendations.map((rec, index) => (
+                            <li key={index} className="text-cli-green font-mono text-sm">{rec}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Best Practices Library */}
+            <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal">
+              <CardHeader>
+                <CardTitle className="text-cli-teal font-mono flex items-center gap-2">
+                  {safeLucideIcon('Library', 'h-5 w-5')}
+                  Best Practices Library
+                </CardTitle>
+                <CardDescription className="text-cli-yellow font-mono">
+                  Browse and search our curated collection of best practices
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Search and Filters */}
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <Input 
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search best practices..."
+                      className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono focus:border-cli-coral"
+                    />
+                  </div>
+                  <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                    <SelectTrigger className="w-48 bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono">
+                      <SelectValue placeholder="Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      <SelectItem value="Planning">Planning</SelectItem>
+                      <SelectItem value="Development">Development</SelectItem>
+                      <SelectItem value="Tool Selection">Tool Selection</SelectItem>
+                      <SelectItem value="Quality Assurance">Quality Assurance</SelectItem>
+                      <SelectItem value="Performance">Performance</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={selectedType} onValueChange={setSelectedType}>
+                    <SelectTrigger className="w-48 bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono">
+                      <SelectValue placeholder="Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="workflow">Workflow</SelectItem>
+                      <SelectItem value="agent">Agent</SelectItem>
+                      <SelectItem value="tool_usage">Tool Usage</SelectItem>
+                      <SelectItem value="configuration">Configuration</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button 
+                    onClick={handleBestPracticesSearch}
+                    className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono"
+                  >
+                    {safeLucideIcon('Search', 'h-4 w-4')}
+                  </Button>
+                </div>
+
+                {/* Best Practices Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {bestPractices.map((practice) => (
+                    <Card key={practice.id} className="bg-cli-bg/50 border-cli-teal/20 hover:border-cli-coral/50 transition-colors">
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <CardTitle className="text-cli-teal font-mono text-lg">{practice.title}</CardTitle>
+                          <div className="flex flex-col gap-1">
+                            <Badge variant="outline" className="border-cli-coral text-cli-coral font-mono text-xs">
+                              {practice.type}
+                            </Badge>
+                            <Badge variant="outline" className={cn(
+                              "font-mono text-xs",
+                              practice.difficulty === 'beginner' ? "border-cli-green text-cli-green" :
+                              practice.difficulty === 'intermediate' ? "border-cli-yellow text-cli-yellow" :
+                              "border-cli-coral text-cli-coral"
+                            )}>
+                              {practice.difficulty}
+                            </Badge>
+                          </div>
+                        </div>
+                        <CardDescription className="text-cli-yellow font-mono text-sm">
+                          {practice.description}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 text-xs font-mono text-cli-green">
+                            {safeLucideIcon('Clock', 'h-3 w-3')}
+                            <span>{practice.estimatedTime}</span>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 text-xs font-mono text-cli-coral">
+                            {safeLucideIcon('Tag', 'h-3 w-3')}
+                            <span>{practice.category}</span>
+                          </div>
+
+                          {practice.tags && practice.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {practice.tags.slice(0, 3).map((tag, index) => (
+                                <Badge key={index} variant="outline" className="border-cli-yellow/50 text-cli-yellow font-mono text-xs">
+                                  {tag}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="pt-2 border-t border-cli-teal/20">
+                            <p className="text-cli-green font-mono text-xs line-clamp-3">
+                              {practice.content.substring(0, 120)}...
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* AI Guidance View */}
+        {activeView === 'guidance' && (
+          <div className="space-y-6">
+            <div className="text-center space-y-4">
+              <h2 className="text-3xl font-mono font-bold text-cli-teal">AI-Powered Guidance</h2>
+              <p className="text-cli-yellow font-mono">Get personalized assistance building your agent or workflow</p>
+            </div>
+
+            <Card className="bg-cli-terminal border-cli-teal/30 shadow-terminal animate-terminal-glow">
+              <CardContent className="p-0">
+                <div 
+                  ref={guidanceRef}
+                  className="h-96 overflow-y-auto p-4 font-mono text-sm bg-cli-bg/30"
+                >
+                  {guidanceHistory.map((message, index) => (
+                    <div key={index} className={cn(
+                      "mb-4 p-3 rounded-lg",
+                      message.type === 'user' 
+                        ? 'bg-cli-teal/20 text-cli-teal ml-8' 
+                        : 'bg-cli-coral/20 text-cli-green mr-8'
+                    )}>
+                      <div className="flex items-start gap-2">
+                        <div className="w-6 h-6 rounded-full bg-current/20 flex items-center justify-center text-xs">
+                          {message.type === 'user' ? 'U' : 'AI'}
+                        </div>
+                        <div className="flex-1">
+                          <p className="whitespace-pre-wrap">{message.content}</p>
+                          {message.metadata?.followUpQuestions && (
+                            <div className="mt-3 space-y-2">
+                              <p className="text-cli-yellow text-xs">Suggested questions:</p>
+                              {message.metadata.followUpQuestions.map((question: string, qIndex: number) => (
+                                <button
+                                  key={qIndex}
+                                  onClick={() => handleGuidanceInput(question)}
+                                  className="block text-left text-xs text-cli-coral hover:text-cli-yellow transition-colors border border-cli-coral/30 rounded px-2 py-1 hover:border-cli-yellow/30"
+                                >
+                                  {question}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {isProcessing && (
+                    <div className="mb-4 p-3 rounded-lg bg-cli-coral/20 text-cli-green mr-8">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-current/20 flex items-center justify-center text-xs">
+                          AI
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {safeLucideIcon('Loader2', 'h-4 w-4 animate-spin')}
+                          <span>Processing your input...</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="border-t border-cli-teal/20 p-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-cli-coral font-mono">&gt;</span>
+                    <input
+                      type="text"
+                      value={currentInput}
+                      onChange={(e) => setCurrentInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !isProcessing) {
+                          handleGuidanceInput(currentInput);
+                        }
+                      }}
+                      className="flex-1 bg-transparent border-none outline-none text-cli-green font-mono placeholder-cli-yellow/50"
+                      placeholder="Describe what you want to build..."
+                      disabled={isProcessing}
+                    />
+                    <Button
+                      onClick={() => handleGuidanceInput(currentInput)}
+                      disabled={!currentInput.trim() || isProcessing}
+                      size="sm"
+                      className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono"
+                    >
+                      {isProcessing ? (
+                        safeLucideIcon('Loader2', 'h-4 w-4 animate-spin')
+                      ) : (
+                        safeLucideIcon('Send', 'h-4 w-4')
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Processing Results */}
+            {processingResult && (
+              <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal">
+                <CardHeader>
+                  <CardTitle className="text-cli-teal font-mono flex items-center gap-2">
+                    {safeLucideIcon('Brain', 'h-5 w-5')}
+                    Analysis Results
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-cli-yellow font-mono text-sm">Confidence:</span>
+                    <Progress value={processingResult.confidence} className="flex-1" />
+                    <span className="text-cli-green font-mono text-sm">{processingResult.confidence}%</span>
+                  </div>
+                  
+                  {processingResult.missingInfo.length > 0 && (
+                    <div>
+                      <p className="text-cli-coral font-mono text-sm mb-2">Missing Information:</p>
+                      <ul className="list-disc list-inside space-y-1">
+                        {processingResult.missingInfo.map((info, index) => (
+                          <li key={index} className="text-cli-yellow font-mono text-sm">{info}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  
+                  {processingResult.recommendations.length > 0 && (
+                    <div>
+                      <p className="text-cli-teal font-mono text-sm mb-2">Recommendations:</p>
+                      <ul className="list-disc list-inside space-y-1">
+                        {processingResult.recommendations.map((rec, index) => (
+                          <li key={index} className="text-cli-green font-mono text-sm">{rec}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className={cn(
+                      "font-mono",
+                      processingResult.isComplete ? "border-cli-green text-cli-green" : "border-cli-yellow text-cli-yellow"
+                    )}>
+                      {processingResult.isComplete ? "Complete" : "In Progress"}
+                    </Badge>
+                    <span className="text-cli-coral font-mono text-sm">Next: {processingResult.nextStep}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {/* Agents View */}
+        {activeView === 'agents' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-3xl font-mono font-bold text-cli-teal">Agents & Workflows</h2>
+                <p className="text-cli-yellow font-mono mt-2">Manage your AI agents and workflow configurations</p>
+              </div>
+              <Button 
+                onClick={() => setActiveView("builder")}
+                className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono shadow-cli-glow"
+              >
+                {safeLucideIcon('Plus', 'mr-2 h-4 w-4')}
+                New Agent
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {agents.map((agent) => (
+                <Card key={agent.id} className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal hover:shadow-cli-glow transition-all duration-300 cursor-pointer"
+                      onClick={() => setSelectedAgent(agent)}>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-cli-teal font-mono text-lg flex items-center gap-2">
+                        {safeLucideIcon(agent.type === 'agent' ? 'Bot' : 'GitBranch', 'h-5 w-5')}
+                        {agent.name}
+                      </CardTitle>
+                      <Badge variant="outline" className="border-cli-coral text-cli-coral font-mono text-xs">
+                        {agent.type}
+                      </Badge>
+                    </div>
+                    <CardDescription className="text-cli-yellow font-mono">
+                      {agent.description}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="bg-cli-bg/50 p-3 rounded-lg border border-cli-teal/20">
+                        <p className="text-xs font-mono text-cli-yellow mb-2">Task Requirements:</p>
+                        <p className="text-sm font-mono text-cli-teal truncate">
+                          {agent.taskRequirements.substring(0, 80)}...
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-between text-xs font-mono">
+                        <Badge variant="outline" className={cn(
+                          "font-mono",
+                          agent.status === 'active' ? "border-cli-green text-cli-green" : 
+                          agent.status === 'draft' ? "border-cli-yellow text-cli-yellow" : "border-cli-coral text-cli-coral"
+                        )}>
+                          {agent.status}
+                        </Badge>
+                        <span className="text-cli-coral">
+                          {new Date(agent.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Builder View */}
+        {activeView === 'builder' && (
+          <div className="space-y-6">
+            <div className="text-center space-y-4">
+              <h2 className="text-3xl font-mono font-bold text-cli-teal">Agent & Workflow Builder</h2>
+              <p className="text-cli-yellow font-mono">Create intelligent agents and workflows with AI assistance</p>
+            </div>
+
+            <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal max-w-4xl mx-auto">
+              <CardHeader>
+                <CardTitle className="text-cli-teal font-mono flex items-center gap-2">
+                  {safeLucideIcon('Wrench', 'h-5 w-5')}
+                  Configuration Builder
+                </CardTitle>
+                <CardDescription className="text-cli-yellow font-mono">
+                  Provide task requirements and select tools to generate optimized configurations
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Form method="post" className="space-y-6">
+                  <input type="hidden" name="intent" value={`generate_${generationType}`} />
+                  <input type="hidden" name="selectedTools" value={JSON.stringify(selectedTools)} />
+                  
+                  <div className="space-y-2">
+                    <Label className="text-cli-yellow font-mono">Configuration Type</Label>
+                    <div className="flex gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setGenerationType("agent")}
+                        className={cn(
+                          "px-4 py-2 rounded-lg font-mono text-sm transition-colors",
+                          generationType === "agent" 
+                            ? "bg-cli-teal text-white" 
+                            : "bg-cli-bg/50 text-cli-teal border border-cli-teal/30"
+                        )}
+                      >
+                        {safeLucideIcon('Bot', 'mr-2 h-4 w-4')}
+                        Agent
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGenerationType("workflow")}
+                        className={cn(
+                          "px-4 py-2 rounded-lg font-mono text-sm transition-colors",
+                          generationType === "workflow" 
+                            ? "bg-cli-teal text-white" 
+                            : "bg-cli-bg/50 text-cli-teal border border-cli-teal/30"
+                        )}
+                      >
+                        {safeLucideIcon('GitBranch', 'mr-2 h-4 w-4')}
+                        Workflow
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label className="text-cli-yellow font-mono">Name</Label>
+                      <Input 
+                        name="name"
+                        placeholder={`e.g., ${generationType === 'agent' ? 'Data Analysis Agent' : 'Code Review Workflow'}`}
+                        className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono focus:border-cli-coral"
+                        required
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-cli-yellow font-mono">Description</Label>
+                      <Input 
+                        name="description"
+                        placeholder="Brief description of the purpose"
+                        className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono focus:border-cli-coral"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-cli-yellow font-mono">Task Requirements</Label>
+                    <Textarea 
+                      name="taskRequirements"
+                      placeholder="Describe what this agent/workflow should accomplish. Be specific about inputs, outputs, and expected behavior."
+                      rows={4}
+                      className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono focus:border-cli-coral resize-none"
+                      required
+                    />
+                    <p className="text-xs text-cli-coral font-mono">
+                      Tip: Include details about data types, expected outputs, and any constraints
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-cli-yellow font-mono">Available Tools</Label>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-48 overflow-y-auto p-4 bg-cli-bg/30 rounded-lg border border-cli-teal/20">
+                      {tools.map((tool) => (
+                        <div key={tool.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`tool-${tool.id}`}
+                            checked={selectedTools.includes(tool.name)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedTools([...selectedTools, tool.name]);
+                              } else {
+                                setSelectedTools(selectedTools.filter(t => t !== tool.name));
+                              }
+                            }}
+                            className="border-cli-teal/50"
+                          />
+                          <Label 
+                            htmlFor={`tool-${tool.id}`} 
+                            className="text-cli-teal font-mono text-sm cursor-pointer"
+                          >
+                            {tool.name}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-cli-yellow font-mono">
+                      Selected: {selectedTools.length} tools
+                    </p>
+                  </div>
+
+                  <div className="flex gap-4 pt-4">
+                    <Button 
+                      type="submit"
+                      name="intent"
+                      value="validate_config"
+                      variant="outline"
+                      disabled={isSubmitting}
+                      className="border-cli-yellow text-cli-yellow hover:bg-cli-yellow/10 font-mono"
+                    >
+                      {safeLucideIcon('CheckCircle', 'mr-2 h-4 w-4')}
+                      Validate Config
+                    </Button>
+                    <Button 
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="flex-1 bg-cli-teal hover:bg-cli-teal/80 text-white font-mono shadow-cli-glow"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          {safeLucideIcon('Loader2', 'mr-2 h-4 w-4 animate-spin')}
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          {safeLucideIcon('Sparkles', 'mr-2 h-4 w-4')}
+                          Generate {generationType.charAt(0).toUpperCase() + generationType.slice(1)}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </Form>
+
+                {/* Validation Results */}
+                {actionData?.validation && (
+                  <div className="mt-6 p-4 bg-cli-bg/50 rounded-lg border border-cli-teal/20">
+                    <h4 className="font-mono font-semibold text-cli-teal mb-3">Configuration Validation</h4>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        {actionData.validation.isComplete ? (
+                          <>
+                            {safeLucideIcon('CheckCircle', 'h-5 w-5 text-cli-green')}
+                            <span className="text-cli-green font-mono">Configuration is complete</span>
+                          </>
+                        ) : (
+                          <>
+                            {safeLucideIcon('AlertCircle', 'h-5 w-5 text-cli-yellow')}
+                            <span className="text-cli-yellow font-mono">Configuration needs improvement</span>
+                          </>
+                        )}
+                      </div>
+                      
+                      {actionData.validation.missingInfo.length > 0 && (
+                        <div>
+                          <p className="text-cli-coral font-mono text-sm mb-2">Missing Information:</p>
+                          <ul className="list-disc list-inside space-y-1">
+                            {actionData.validation.missingInfo.map((info: string, index: number) => (
+                              <li key={index} className="text-cli-yellow font-mono text-sm">{info}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {actionData.validation.recommendations.length > 0 && (
+                        <div>
+                          <p className="text-cli-teal font-mono text-sm mb-2">Recommendations:</p>
+                          <ul className="list-disc list-inside space-y-1">
+                            {actionData.validation.recommendations.map((rec: string, index: number) => (
+                              <li key={index} className="text-cli-green font-mono text-sm">{rec}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Terminal View */}
+        {activeView === 'terminal' && (
+          <div className="space-y-6">
+            <div className="text-center space-y-4">
+              <h2 className="text-3xl font-mono font-bold text-cli-teal">Interactive Terminal</h2>
+              <p className="text-cli-yellow font-mono">Execute CLI commands and interact with your agents</p>
+            </div>
+
+            <Card className="bg-cli-terminal border-cli-teal/30 shadow-terminal animate-terminal-glow">
+              <CardContent className="p-0">
+                <div 
+                  ref={terminalRef}
+                  className="h-96 overflow-y-auto p-4 font-mono text-sm bg-cli-bg/30"
+                  onClick={() => setIsTerminalActive(true)}
+                >
+                  {terminalHistory.map((line, index) => (
+                    <div key={index} className={cn(
+                      "mb-1",
+                      line.startsWith('$') ? 'text-cli-coral' : 'text-cli-green',
+                      line.includes('✓') && 'text-cli-teal',
+                      line.includes('Error') && 'text-red-400'
+                    )}>
+                      {line}
+                    </div>
+                  ))}
+                  <div className="flex items-center">
+                    <span className="text-cli-coral mr-2">$</span>
+                    <input
+                      type="text"
+                      value={currentCommand}
+                      onChange={(e) => setCurrentCommand(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleTerminalCommand(currentCommand);
+                        }
+                      }}
+                      className="flex-1 bg-transparent border-none outline-none text-cli-green font-mono"
+                      placeholder="Type a command..."
+                      autoFocus={isTerminalActive}
+                    />
+                    <span className="text-cli-green animate-blink">|</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Command Reference */}
+            <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal">
+              <CardHeader>
+                <CardTitle className="text-cli-teal font-mono flex items-center gap-2">
+                  {safeLucideIcon('BookOpen', 'h-5 w-5')}
+                  Command Reference
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {cliCommands.map((cmd, index) => (
+                    <div key={index} className="p-4 bg-cli-bg/50 rounded-lg border border-cli-teal/20">
+                      <div className="space-y-2">
+                        <code className="text-cli-coral font-mono font-semibold">{cmd.command}</code>
+                        <p className="text-cli-yellow font-mono text-sm">{cmd.description}</p>
+                        <code className="text-cli-green font-mono text-xs block bg-cli-terminal/50 p-2 rounded">
+                          {cmd.example}
+                        </code>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Documentation View */}
+        {activeView === 'docs' && (
+          <div className="space-y-6">
+            <div className="text-center space-y-4">
+              <h2 className="text-3xl font-mono font-bold text-cli-teal">Documentation</h2>
+              <p className="text-cli-yellow font-mono">Learn how to build and configure agent workflows</p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Getting Started */}
+              <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal">
+                <CardHeader>
+                  <CardTitle className="text-cli-teal font-mono flex items-center gap-2">
+                    {safeLucideIcon('Rocket', 'h-5 w-5')}
+                    Getting Started
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 bg-cli-teal/20 rounded-full flex items-center justify-center text-cli-teal font-mono text-xs font-bold">1</div>
+                      <div>
+                        <h4 className="font-mono font-semibold text-cli-teal">Start AI Guidance</h4>
+                        <p className="text-sm text-cli-yellow font-mono">Use AI assistance for personalized help</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 bg-cli-coral/20 rounded-full flex items-center justify-center text-cli-coral font-mono text-xs font-bold">2</div>
+                      <div>
+                        <h4 className="font-mono font-semibold text-cli-coral">Define Requirements</h4>
+                        <p className="text-sm text-cli-yellow font-mono">Specify your task requirements clearly</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 bg-cli-yellow/20 rounded-full flex items-center justify-center text-cli-yellow font-mono text-xs font-bold">3</div>
+                      <div>
+                        <h4 className="font-mono font-semibold text-cli-yellow">Generate & Test</h4>
+                        <p className="text-sm text-cli-yellow font-mono">Generate configuration and test via terminal</p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* AI Guidance */}
+              <Card className="bg-cli-terminal/50 border-cli-coral/30 shadow-terminal">
+                <CardHeader>
+                  <CardTitle className="text-cli-coral font-mono flex items-center gap-2">
+                    {safeLucideIcon('Brain', 'h-5 w-5')}
+                    AI Guidance Features
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="font-mono font-semibold text-cli-coral mb-2">Interactive Chat</h4>
+                      <p className="text-cli-yellow font-mono text-sm">
+                        Conversational interface for building requirements
+                      </p>
+                    </div>
+                    <div>
+                      <h4 className="font-mono font-semibold text-cli-coral mb-2">Smart Recommendations</h4>
+                      <p className="text-cli-yellow font-mono text-sm">
+                        AI-powered suggestions for tools and configurations
+                      </p>
+                    </div>
+                    <div>
+                      <h4 className="font-mono font-semibold text-cli-coral mb-2">Real-time Validation</h4>
+                      <p className="text-cli-yellow font-mono text-sm">
+                        Instant feedback on configuration completeness
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Best Practices */}
+              <Card className="bg-cli-terminal/50 border-cli-yellow/30 shadow-terminal">
+                <CardHeader>
+                  <CardTitle className="text-cli-yellow font-mono flex items-center gap-2">
+                    {safeLucideIcon('Lightbulb', 'h-5 w-5')}
+                    Best Practices
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-2">
+                      <div className="w-2 h-2 bg-cli-yellow rounded-full mt-2"></div>
+                      <p className="text-sm text-cli-yellow font-mono">Start with AI guidance for personalized help</p>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <div className="w-2 h-2 bg-cli-yellow rounded-full mt-2"></div>
+                      <p className="text-sm text-cli-yellow font-mono">Be specific about input/output formats</p>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <div className="w-2 h-2 bg-cli-yellow rounded-full mt-2"></div>
+                      <p className="text-sm text-cli-yellow font-mono">Use validation to improve quality</p>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <div className="w-2 h-2 bg-cli-yellow rounded-full mt-2"></div>
+                      <p className="text-sm text-cli-yellow font-mono">Test configurations before deployment</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Agent Detail Modal */}
+      {selectedAgent && (
+        <Dialog open={!!selectedAgent} onOpenChange={() => setSelectedAgent(null)}>
+          <DialogContent className="bg-cli-terminal border-cli-teal/30 max-w-4xl">
+            <DialogHeader>
+              <DialogTitle className="text-cli-teal font-mono flex items-center gap-2">
+                {safeLucideIcon(selectedAgent.type === 'agent' ? 'Bot' : 'GitBranch', 'h-5 w-5')}
+                {selectedAgent.name}
+              </DialogTitle>
+              <DialogDescription className="text-cli-yellow font-mono">
+                {selectedAgent.description}
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-6">
+              <div>
+                <Label className="text-cli-yellow font-mono">Task Requirements</Label>
+                <div className="mt-2 p-4 bg-cli-bg/50 rounded-lg border border-cli-teal/20">
+                  <p className="text-cli-green font-mono text-sm whitespace-pre-wrap">
+                    {selectedAgent.taskRequirements}
+                  </p>
+                </div>
+              </div>
+
+              {selectedAgent.generatedPrompt && (
+                <div>
+                  <Label className="text-cli-yellow font-mono">Generated Prompt</Label>
+                  <div className="mt-2 p-4 bg-cli-bg/50 rounded-lg border border-cli-teal/20">
+                    <p className="text-cli-green font-mono text-sm whitespace-pre-wrap">
+                      {selectedAgent.generatedPrompt}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}

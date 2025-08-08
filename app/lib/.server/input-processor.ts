@@ -40,26 +40,6 @@ async function generateWithRetries(prompt: string, retries = 3): Promise<string 
   return null;
 }
 
-export interface ProcessingResult {
-  response: string;
-  nextStep: string;
-  missingInfo: string[];
-  recommendations: string[];
-  confidence: number;
-  suggestions: string[];
-  isComplete: boolean;
-  followUpQuestions?: string[];
-}
-
-export interface SessionContext {
-  sessionId: string;
-  currentStep: string;
-  taskType?: string;
-  requirements: string[];
-  selectedTools: string[];
-  missingInfo: string[];
-  userResponses: Record<string, any>;
-}
 
 export interface BestPracticeAnalysis {
   taskComplexity: "simple" | "moderate" | "complex";
@@ -79,25 +59,6 @@ export interface BestPracticeAnalysis {
 }
 
 export class InputProcessor {
-  async processUserInput(
-    userInput: string,
-    context: SessionContext,
-    availableTools: string[]
-  ): Promise<ProcessingResult | null> {
-    try {
-      const prompt = this.buildProcessingPrompt(userInput, context, availableTools);
-      const response = await generateWithRetries(prompt);
-      
-      if (!response) {
-        throw new Error("Failed to process user input");
-      }
-
-      return this.parseProcessingResponse(response, context);
-    } catch (error) {
-      console.error("Error processing user input:", error);
-      return null;
-    }
-  }
 
   async analyzeRequirements(requirements: string): Promise<BestPracticeAnalysis | null> {
     try {
@@ -135,40 +96,6 @@ export class InputProcessor {
     }
   }
 
-  private buildProcessingPrompt(userInput: string, context: SessionContext, availableTools: string[]): string {
-    return `
-You are an expert AI assistant helping users build optimal agent workflows and configurations. 
-
-Current Context:
-- Session ID: ${context.sessionId}
-- Current Step: ${context.currentStep}
-- Task Type: ${context.taskType || "general"}
-- Previous Requirements: ${context.requirements.join(", ") || "None"}
-- Selected Tools: ${context.selectedTools.join(", ") || "None"}
-- Available Tools: ${availableTools.join(", ")}
-
-User Input: "${userInput}"
-
-Analyze the user input and provide guidance to help them build the best possible agent or workflow. Consider:
-1. Clarity and completeness of requirements
-2. Tool selection appropriateness
-3. Best practices for the task type
-4. Potential challenges or missing information
-5. Next steps in the configuration process
-
-Respond with a JSON object containing:
-- response: string (helpful response to the user)
-- nextStep: string (what should happen next)
-- missingInfo: array of strings (what information is still needed)
-- recommendations: array of strings (best practice suggestions)
-- confidence: number (0-100, how complete the configuration is)
-- suggestions: array of strings (specific improvement suggestions)
-- isComplete: boolean (whether enough info has been gathered)
-- followUpQuestions: array of strings (specific questions to ask the user)
-
-Focus on being helpful, specific, and actionable in your guidance.
-`;
-  }
 
   private buildAnalysisPrompt(requirements: string): string {
     return `
@@ -232,37 +159,6 @@ Focus on industry best practices and proven methodologies.
 `;
   }
 
-  private parseProcessingResponse(response: string, context: SessionContext): ProcessingResult {
-    try {
-      const parsed = JSON.parse(response);
-      return {
-        response: parsed.response || "I'm here to help you build the best configuration possible.",
-        nextStep: parsed.nextStep || "gather_requirements",
-        missingInfo: parsed.missingInfo || [],
-        recommendations: parsed.recommendations || [],
-        confidence: parsed.confidence || 50,
-        suggestions: parsed.suggestions || [],
-        isComplete: parsed.isComplete || false,
-        followUpQuestions: parsed.followUpQuestions || []
-      };
-    } catch (error) {
-      console.error("Error parsing processing response:", error);
-      return {
-        response: "I understand you want to build something. Could you provide more details about your specific requirements?",
-        nextStep: "gather_requirements",
-        missingInfo: ["Specific task requirements", "Expected inputs and outputs", "Success criteria"],
-        recommendations: ["Be specific about what you want to accomplish", "Include input/output formats", "Define success criteria"],
-        confidence: 25,
-        suggestions: ["Provide more detailed requirements"],
-        isComplete: false,
-        followUpQuestions: [
-          "What specific task do you want your agent to perform?",
-          "What type of input data will it work with?",
-          "What should the output look like?"
-        ]
-      };
-    }
-  }
 
   private parseAnalysisResponse(response: string): BestPracticeAnalysis {
     try {

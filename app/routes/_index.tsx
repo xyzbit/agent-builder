@@ -214,12 +214,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         category: "Configuration"
       },
       {
-        command: "guide start",
-        description: "Start interactive guidance session",
-        example: "guide start --task 'data analysis'",
-        category: "Guidance"
-      },
-      {
         command: "best-practices analyze",
         description: "Analyze requirements for best practices",
         example: "best-practices analyze --requirements 'process CSV data'",
@@ -277,7 +271,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const { userSessionsStorage } = await import("~/lib/.server/user-sessions.storage");
     const { bestPracticesStorage } = await import("~/lib/.server/best-practices.storage");
     const { aiGenerator } = await import("~/lib/.server/ai-generator");
-    const { inputProcessor } = await import("~/lib/.server/input-processor");
 
     switch (intent) {
       case "analyze_best_practices": {
@@ -292,6 +285,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           }, { status: 400 });
         }
 
+        const { inputProcessor } = await import("~/lib/.server/input-processor");
         const analysis = await inputProcessor.provideBestPracticeRecommendations(
           taskType,
           requirements,
@@ -355,124 +349,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         });
       }
 
-      case "start_guidance_session": {
-        const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const taskType = formData.get("taskType") as string || "general";
-        
-        const session = await userSessionsStorage.createSession({
-          sessionId,
-          currentStep: "initial_input",
-          status: "active",
-          context: {
-            taskType,
-            requirements: [],
-            selectedTools: [],
-            missingInfo: [],
-            recommendations: [],
-            userResponses: {}
-          }
-        });
-
-        return json({ 
-          success: true, 
-          message: "Guidance session started",
-          sessionId: session.sessionId,
-          nextStep: "initial_input"
-        });
-      }
-
-      case "process_user_input": {
-        const sessionId = formData.get("sessionId") as string;
-        const userInput = formData.get("userInput") as string;
-        const inputType = formData.get("inputType") as string || "requirement";
-        
-        if (!sessionId || !userInput) {
-          return json({ 
-            error: "Session ID and user input are required",
-            success: false 
-          }, { status: 400 });
-        }
-
-        // Get current session
-        const session = await userSessionsStorage.getSessionWithInteractions(sessionId);
-        if (!session) {
-          return json({ 
-            error: "Session not found",
-            success: false 
-          }, { status: 404 });
-        }
-
-        // Get available tools
-        const tools = await toolsStorage.getActiveTools();
-        const toolNames = tools.map(t => t.name);
-
-        // Process user input with AI
-        const processingResult = await inputProcessor.processUserInput(
-          userInput,
-          {
-            sessionId: session.sessionId,
-            currentStep: session.currentStep,
-            taskType: session.context?.taskType,
-            requirements: session.context?.requirements || [],
-            selectedTools: session.context?.selectedTools || [],
-            missingInfo: session.context?.missingInfo || [],
-            userResponses: session.context?.userResponses || {}
-          },
-          toolNames
-        );
-
-        if (!processingResult) {
-          return json({ 
-            error: "Failed to process user input",
-            success: false 
-          }, { status: 500 });
-        }
-
-        // Add interaction to database
-        await userSessionsStorage.addInteraction({
-          sessionId,
-          userInput,
-          aiResponse: processingResult.response,
-          inputType,
-          metadata: {
-            confidence: processingResult.confidence,
-            suggestions: processingResult.suggestions,
-            nextSteps: [processingResult.nextStep],
-            validationResults: {
-              missingInfo: processingResult.missingInfo,
-              recommendations: processingResult.recommendations,
-              isComplete: processingResult.isComplete
-            }
-          }
-        });
-
-        // Update session context
-        const updatedContext = {
-          ...session.context,
-          requirements: [
-            ...(session.context?.requirements || []),
-            userInput
-          ],
-          missingInfo: processingResult.missingInfo,
-          recommendations: processingResult.recommendations,
-          userResponses: {
-            ...(session.context?.userResponses || {}),
-            [inputType]: userInput
-          }
-        };
-
-        await userSessionsStorage.updateSession(sessionId, {
-          currentStep: processingResult.nextStep,
-          context: updatedContext
-        });
-
-        return json({ 
-          success: true, 
-          message: "Input processed successfully",
-          processingResult,
-          sessionUpdated: true
-        });
-      }
 
       case "analyze_requirements": {
         const requirements = formData.get("requirements") as string;
@@ -484,6 +360,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           }, { status: 400 });
         }
 
+        const { inputProcessor } = await import("~/lib/.server/input-processor");
         const analysis = await inputProcessor.analyzeRequirements(requirements);
         
         if (!analysis) {
@@ -512,6 +389,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           }, { status: 400 });
         }
 
+        const { inputProcessor } = await import("~/lib/.server/input-processor");
         const recommendations = await inputProcessor.provideBestPracticeRecommendations(
           taskType,
           requirements,
@@ -648,6 +526,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           } else if (command.startsWith("best-practices analyze")) {
             const requirements = command.split("--requirements")[1]?.trim().replace(/['"]/g, "") || "";
             if (requirements) {
+              const { inputProcessor } = await import("~/lib/.server/input-processor");
               const analysis = await inputProcessor.analyzeRequirements(requirements);
               if (analysis) {
                 result = `Analysis Results:\n` +
@@ -665,22 +544,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               result = "Error: --requirements parameter is required";
               status = "error";
             }
-          } else if (command.startsWith("guide start")) {
-            const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            await userSessionsStorage.createSession({
-              sessionId,
-              currentStep: "initial_input",
-              status: "active",
-              context: {
-                taskType: "general",
-                requirements: [],
-                selectedTools: [],
-                missingInfo: [],
-                recommendations: [],
-                userResponses: {}
-              }
-            });
-            result = `Interactive guidance session started: ${sessionId}\nType your requirements to begin...`;
           } else if (command.startsWith("agent run") && agentId) {
             const agent = await agentsStorage.getAgentById(agentId);
             if (agent) {
@@ -780,13 +643,12 @@ export default function Index() {
   const isMobile = useIsMobile();
 
   // SPA state management
-  const [activeView, setActiveView] = useState<'dashboard' | 'agents' | 'builder' | 'terminal' | 'guidance' | 'best-practices' | 'docs'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'agents' | 'builder' | 'terminal' | 'best-practices' | 'docs'>('dashboard');
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [terminalHistory, setTerminalHistory] = useState<string[]>([
     "Welcome to CLI Prompt Builder v1.0.0",
     "Type 'help' for available commands",
-    "Type 'guide start' to begin interactive guidance",
     "Type 'best-practices list' to view best practices",
     ""
   ]);
@@ -795,18 +657,6 @@ export default function Index() {
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
   const [generationType, setGenerationType] = useState<"agent" | "workflow">("agent");
 
-  // Guidance state
-  const [currentSession, setCurrentSession] = useState<string | null>(null);
-  const [guidanceHistory, setGuidanceHistory] = useState<Array<{
-    type: 'user' | 'ai';
-    content: string;
-    timestamp: Date;
-    metadata?: any;
-  }>>([]);
-  const [currentInput, setCurrentInput] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [currentStep, setCurrentStep] = useState("initial_input");
-  const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null);
 
   // Best practices state
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -817,7 +667,6 @@ export default function Index() {
 
   const isSubmitting = navigation.state === "submitting";
   const terminalRef = useRef<HTMLDivElement>(null);
-  const guidanceRef = useRef<HTMLDivElement>(null);
 
   // Handle action responses
   useEffect(() => {
@@ -832,24 +681,6 @@ export default function Index() {
         setTerminalHistory(prev => [...prev, actionData.output, ""]);
       }
       
-      if (actionData.sessionId) {
-        setCurrentSession(actionData.sessionId);
-        setGuidanceHistory([{
-          type: 'ai',
-          content: "Hello! I'm here to help you build the perfect agent or workflow. What would you like to create today?",
-          timestamp: new Date()
-        }]);
-      }
-
-      if (actionData.processingResult) {
-        setProcessingResult(actionData.processingResult);
-        setGuidanceHistory(prev => [...prev, {
-          type: 'ai',
-          content: actionData.processingResult.response,
-          timestamp: new Date(),
-          metadata: actionData.processingResult
-        }]);
-      }
 
       if (actionData.analysis) {
         setAnalysisResult(actionData.analysis);
@@ -915,62 +746,6 @@ export default function Index() {
     setCurrentCommand("");
   }, [terminalHistory, cliCommands, agents, tools, bestPractices]);
 
-  // Guidance input handler
-  const handleGuidanceInput = useCallback(async (input: string) => {
-    if (!input.trim() || isProcessing) return;
-
-    setIsProcessing(true);
-    setCurrentInput("");
-
-    // Add user input to history
-    const userMessage = {
-      type: 'user' as const,
-      content: input,
-      timestamp: new Date()
-    };
-    setGuidanceHistory(prev => [...prev, userMessage]);
-
-    try {
-      let sessionId = currentSession;
-      
-      // Start new session if none exists
-      if (!sessionId) {
-        const fetcher = useFetcher();
-        const response = await fetch('/', {
-          method: 'POST',
-          body: new URLSearchParams({
-            intent: 'start_guidance_session',
-            taskType: 'general'
-          })
-        });
-        const data = await response.json();
-        if (data.success) {
-          sessionId = data.sessionId;
-          setCurrentSession(sessionId);
-        }
-      }
-
-      if (sessionId) {
-        // Process user input
-        const fetcher = useFetcher();
-        fetcher.submit({
-          intent: "process_user_input",
-          sessionId,
-          userInput: input,
-          inputType: currentStep
-        }, { method: "POST" });
-      }
-    } catch (error) {
-      console.error("Error processing guidance input:", error);
-      setGuidanceHistory(prev => [...prev, {
-        type: 'ai',
-        content: "I'm sorry, I encountered an error processing your input. Please try again.",
-        timestamp: new Date()
-      }]);
-    } finally {
-      setIsProcessing(false);
-    }
-  }, [currentSession, currentStep, isProcessing]);
 
   // Best practices search handler
   const handleBestPracticesSearch = useCallback(() => {
@@ -1003,11 +778,6 @@ export default function Index() {
     }
   }, [terminalHistory]);
 
-  useEffect(() => {
-    if (guidanceRef.current) {
-      guidanceRef.current.scrollTop = guidanceRef.current.scrollHeight;
-    }
-  }, [guidanceHistory]);
 
   // Show error state if data loading failed
   if (error) {
@@ -1076,18 +846,6 @@ export default function Index() {
               Builder
             </button>
             <button 
-              onClick={() => setActiveView("guidance")}
-              className={cn(
-                "font-mono text-sm transition-colors px-3 py-2 rounded-md",
-                activeView === "guidance" 
-                  ? "bg-cli-teal text-white" 
-                  : "text-cli-teal hover:bg-cli-teal/10"
-              )}
-            >
-              {safeLucideIcon('MessageSquare', 'mr-2 h-4 w-4')}
-              AI Guidance
-            </button>
-            <button 
               onClick={() => setActiveView("best-practices")}
               className={cn(
                 "font-mono text-sm transition-colors px-3 py-2 rounded-md",
@@ -1153,16 +911,15 @@ export default function Index() {
                     </span>
                   </h1>
                   <p className="text-lg text-cli-yellow max-w-2xl mx-auto font-mono leading-relaxed">
-                    Build and configure agent workflows with AI-powered guidance and interactive assistance. 
-                    Get personalized recommendations and step-by-step support.
+                    Build and configure agent workflows with best practices guidance and interactive assistance.
                   </p>
                   <div className="flex gap-4 justify-center mt-8">
                     <Button 
-                      onClick={() => setActiveView("guidance")}
+                      onClick={() => setActiveView("builder")}
                       className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono px-8 py-3 text-lg shadow-cli-glow"
                     >
-                      {safeLucideIcon('MessageSquare', 'mr-2 h-5 w-5')}
-                      Start AI Guidance
+                      {safeLucideIcon('Wrench', 'mr-2 h-5 w-5')}
+                      Start Building
                     </Button>
                     <Button 
                       variant="outline"
@@ -1587,151 +1344,6 @@ export default function Index() {
           </div>
         )}
 
-        {/* AI Guidance View */}
-        {activeView === 'guidance' && (
-          <div className="space-y-6">
-            <div className="text-center space-y-4">
-              <h2 className="text-3xl font-mono font-bold text-cli-teal">AI-Powered Guidance</h2>
-              <p className="text-cli-yellow font-mono">Get personalized assistance building your agent or workflow</p>
-            </div>
-
-            <Card className="bg-cli-terminal border-cli-teal/30 shadow-terminal animate-terminal-glow">
-              <CardContent className="p-0">
-                <div 
-                  ref={guidanceRef}
-                  className="h-96 overflow-y-auto p-4 font-mono text-sm bg-cli-bg/30"
-                >
-                  {guidanceHistory.map((message, index) => (
-                    <div key={index} className={cn(
-                      "mb-4 p-3 rounded-lg",
-                      message.type === 'user' 
-                        ? 'bg-cli-teal/20 text-cli-teal ml-8' 
-                        : 'bg-cli-coral/20 text-cli-green mr-8'
-                    )}>
-                      <div className="flex items-start gap-2">
-                        <div className="w-6 h-6 rounded-full bg-current/20 flex items-center justify-center text-xs">
-                          {message.type === 'user' ? 'U' : 'AI'}
-                        </div>
-                        <div className="flex-1">
-                          <p className="whitespace-pre-wrap">{message.content}</p>
-                          {message.metadata?.followUpQuestions && (
-                            <div className="mt-3 space-y-2">
-                              <p className="text-cli-yellow text-xs">Suggested questions:</p>
-                              {message.metadata.followUpQuestions.map((question: string, qIndex: number) => (
-                                <button
-                                  key={qIndex}
-                                  onClick={() => handleGuidanceInput(question)}
-                                  className="block text-left text-xs text-cli-coral hover:text-cli-yellow transition-colors border border-cli-coral/30 rounded px-2 py-1 hover:border-cli-yellow/30"
-                                >
-                                  {question}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {isProcessing && (
-                    <div className="mb-4 p-3 rounded-lg bg-cli-coral/20 text-cli-green mr-8">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-current/20 flex items-center justify-center text-xs">
-                          AI
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {safeLucideIcon('Loader2', 'h-4 w-4 animate-spin')}
-                          <span>Processing your input...</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="border-t border-cli-teal/20 p-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-cli-coral font-mono">&gt;</span>
-                    <input
-                      type="text"
-                      value={currentInput}
-                      onChange={(e) => setCurrentInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !isProcessing) {
-                          handleGuidanceInput(currentInput);
-                        }
-                      }}
-                      className="flex-1 bg-transparent border-none outline-none text-cli-green font-mono placeholder-cli-yellow/50"
-                      placeholder="Describe what you want to build..."
-                      disabled={isProcessing}
-                    />
-                    <Button
-                      onClick={() => handleGuidanceInput(currentInput)}
-                      disabled={!currentInput.trim() || isProcessing}
-                      size="sm"
-                      className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono"
-                    >
-                      {isProcessing ? (
-                        safeLucideIcon('Loader2', 'h-4 w-4 animate-spin')
-                      ) : (
-                        safeLucideIcon('Send', 'h-4 w-4')
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Processing Results */}
-            {processingResult && (
-              <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal">
-                <CardHeader>
-                  <CardTitle className="text-cli-teal font-mono flex items-center gap-2">
-                    {safeLucideIcon('Brain', 'h-5 w-5')}
-                    Analysis Results
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-cli-yellow font-mono text-sm">Confidence:</span>
-                    <Progress value={processingResult.confidence} className="flex-1" />
-                    <span className="text-cli-green font-mono text-sm">{processingResult.confidence}%</span>
-                  </div>
-                  
-                  {processingResult.missingInfo.length > 0 && (
-                    <div>
-                      <p className="text-cli-coral font-mono text-sm mb-2">Missing Information:</p>
-                      <ul className="list-disc list-inside space-y-1">
-                        {processingResult.missingInfo.map((info, index) => (
-                          <li key={index} className="text-cli-yellow font-mono text-sm">{info}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  
-                  {processingResult.recommendations.length > 0 && (
-                    <div>
-                      <p className="text-cli-teal font-mono text-sm mb-2">Recommendations:</p>
-                      <ul className="list-disc list-inside space-y-1">
-                        {processingResult.recommendations.map((rec, index) => (
-                          <li key={index} className="text-cli-green font-mono text-sm">{rec}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className={cn(
-                      "font-mono",
-                      processingResult.isComplete ? "border-cli-green text-cli-green" : "border-cli-yellow text-cli-yellow"
-                    )}>
-                      {processingResult.isComplete ? "Complete" : "In Progress"}
-                    </Badge>
-                    <span className="text-cli-coral font-mono text-sm">Next: {processingResult.nextStep}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
 
         {/* Agents View */}
         {activeView === 'agents' && (
@@ -2115,32 +1727,32 @@ export default function Index() {
                 </CardContent>
               </Card>
 
-              {/* AI Guidance */}
+              {/* Builder Features */}
               <Card className="bg-cli-terminal/50 border-cli-coral/30 shadow-terminal">
                 <CardHeader>
                   <CardTitle className="text-cli-coral font-mono flex items-center gap-2">
-                    {safeLucideIcon('Brain', 'h-5 w-5')}
-                    AI Guidance Features
+                    {safeLucideIcon('Wrench', 'h-5 w-5')}
+                    Builder Features
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-3">
                     <div>
-                      <h4 className="font-mono font-semibold text-cli-coral mb-2">Interactive Chat</h4>
+                      <h4 className="font-mono font-semibold text-cli-coral mb-2">Interactive Builder</h4>
                       <p className="text-cli-yellow font-mono text-sm">
-                        Conversational interface for building requirements
+                        Step-by-step interface for building configurations
                       </p>
                     </div>
                     <div>
-                      <h4 className="font-mono font-semibold text-cli-coral mb-2">Smart Recommendations</h4>
+                      <h4 className="font-mono font-semibold text-cli-coral mb-2">Smart Validation</h4>
                       <p className="text-cli-yellow font-mono text-sm">
-                        AI-powered suggestions for tools and configurations
+                        AI-powered validation and suggestions for improvements
                       </p>
                     </div>
                     <div>
-                      <h4 className="font-mono font-semibold text-cli-coral mb-2">Real-time Validation</h4>
+                      <h4 className="font-mono font-semibold text-cli-coral mb-2">Tool Selection</h4>
                       <p className="text-cli-yellow font-mono text-sm">
-                        Instant feedback on configuration completeness
+                        Choose from available tools to optimize your workflow
                       </p>
                     </div>
                   </div>
@@ -2159,7 +1771,7 @@ export default function Index() {
                   <div className="space-y-3">
                     <div className="flex items-start gap-2">
                       <div className="w-2 h-2 bg-cli-yellow rounded-full mt-2"></div>
-                      <p className="text-sm text-cli-yellow font-mono">Start with AI guidance for personalized help</p>
+                      <p className="text-sm text-cli-yellow font-mono">Start with the builder for step-by-step help</p>
                     </div>
                     <div className="flex items-start gap-2">
                       <div className="w-2 h-2 bg-cli-yellow rounded-full mt-2"></div>

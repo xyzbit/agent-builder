@@ -94,8 +94,8 @@ interface Tool {
   name: string;
   description: string;
   category: string;
-  apiEndpoint?: string;
-  parameters?: any[];
+  toolType: 'mcp' | 'cli' | 'openapi';
+  usage?: string;
   isActive: boolean;
   createdAt: Date;
 }
@@ -277,11 +277,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         const requirements = formData.get("requirements") as string;
         const taskType = formData.get("taskType") as string || "general";
         const selectedTools = JSON.parse(formData.get("selectedTools") as string || "[]");
-        
+
         if (!requirements) {
-          return json({ 
+          return json({
             error: "Requirements are required for best practice analysis",
-            success: false 
+            success: false
           }, { status: 400 });
         }
 
@@ -291,11 +291,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           requirements,
           selectedTools
         );
-        
+
         if (!analysis) {
-          return json({ 
+          return json({
             error: "Failed to analyze best practices",
-            success: false 
+            success: false
           }, { status: 500 });
         }
 
@@ -318,8 +318,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           confidence: analysis.confidence
         });
 
-        return json({ 
-          success: true, 
+        return json({
+          success: true,
           message: "Best practice analysis completed",
           analysis
         });
@@ -329,9 +329,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         const query = formData.get("query") as string;
         const category = formData.get("category") as string;
         const type = formData.get("type") as string;
-        
+
         let practices: BestPractice[] = [];
-        
+
         if (query) {
           practices = await bestPracticesStorage.searchBestPractices(query, 20);
         } else if (category) {
@@ -342,8 +342,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           practices = await bestPracticesStorage.getBestPractices(20);
         }
 
-        return json({ 
-          success: true, 
+        return json({
+          success: true,
           practices,
           message: `Found ${practices.length} best practices`
         });
@@ -352,26 +352,26 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       case "analyze_requirements": {
         const requirements = formData.get("requirements") as string;
-        
+
         if (!requirements) {
-          return json({ 
+          return json({
             error: "Requirements are required for analysis",
-            success: false 
+            success: false
           }, { status: 400 });
         }
 
         const { inputProcessor } = await import("~/lib/.server/input-processor");
         const analysis = await inputProcessor.analyzeRequirements(requirements);
-        
+
         if (!analysis) {
-          return json({ 
+          return json({
             error: "Failed to analyze requirements",
-            success: false 
+            success: false
           }, { status: 500 });
         }
 
-        return json({ 
-          success: true, 
+        return json({
+          success: true,
           message: "Requirements analyzed successfully",
           analysis
         });
@@ -381,11 +381,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         const taskType = formData.get("taskType") as string;
         const requirements = formData.get("requirements") as string;
         const selectedTools = JSON.parse(formData.get("selectedTools") as string || "[]");
-        
+
         if (!taskType || !requirements) {
-          return json({ 
+          return json({
             error: "Task type and requirements are required",
-            success: false 
+            success: false
           }, { status: 400 });
         }
 
@@ -395,16 +395,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           requirements,
           selectedTools
         );
-        
+
         if (!recommendations) {
-          return json({ 
+          return json({
             error: "Failed to generate recommendations",
-            success: false 
+            success: false
           }, { status: 500 });
         }
 
-        return json({ 
-          success: true, 
+        return json({
+          success: true,
           message: "Recommendations generated successfully",
           recommendations
         });
@@ -417,17 +417,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         const taskRequirements = formData.get("taskRequirements") as string;
         const selectedTools = JSON.parse(formData.get("selectedTools") as string || "[]");
         const type = intent === "generate_agent" ? "agent" : "workflow";
-        
+
         if (!name || !description || !taskRequirements) {
-          return json({ 
+          return json({
             error: "Missing required fields: name, description, and task requirements are required",
-            success: false 
+            success: false
           }, { status: 400 });
         }
 
         // Validate configuration first
         const validation = await aiGenerator.validateConfiguration(taskRequirements, selectedTools);
-        
+
         if (!validation.isComplete) {
           return json({
             success: false,
@@ -444,14 +444,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           additionalContext: description
         };
 
-        const aiResponse = type === "agent" 
+        const aiResponse = type === "agent"
           ? await aiGenerator.generateAgent(generationRequest)
           : await aiGenerator.generateWorkflow(generationRequest);
 
         if (!aiResponse) {
-          return json({ 
+          return json({
             error: "Failed to generate configuration. Please try again.",
-            success: false 
+            success: false
           }, { status: 500 });
         }
 
@@ -466,8 +466,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           status: "draft"
         });
 
-        return json({ 
-          success: true, 
+        return json({
+          success: true,
           message: `${type.charAt(0).toUpperCase() + type.slice(1)} generated successfully`,
           agent: newAgent,
           aiResponse
@@ -477,18 +477,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       case "validate_config": {
         const taskRequirements = formData.get("taskRequirements") as string;
         const selectedTools = JSON.parse(formData.get("selectedTools") as string || "[]");
-        
+
         if (!taskRequirements) {
-          return json({ 
+          return json({
             error: "Task requirements are required for validation",
-            success: false 
+            success: false
           }, { status: 400 });
         }
 
         const validation = await aiGenerator.validateConfiguration(taskRequirements, selectedTools);
-        
-        return json({ 
-          success: true, 
+
+        return json({
+          success: true,
           validation,
           message: validation.isComplete ? "Configuration is complete" : "Configuration needs improvement"
         });
@@ -497,11 +497,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       case "run_command": {
         const command = formData.get("command") as string;
         const agentId = formData.get("agentId") ? parseInt(formData.get("agentId") as string) : null;
-        
+
         if (!command) {
-          return json({ 
+          return json({
             error: "Command is required",
-            success: false 
+            success: false
           }, { status: 400 });
         }
 
@@ -513,16 +513,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           // Process different commands
           if (command.startsWith("agent list")) {
             const agents = await agentsStorage.getAgents(10);
-            result = `Found ${agents.length} agents:\n` + 
-                    agents.map(a => `  ${a.id}. ${a.name} (${a.type}) - ${a.status}`).join('\n');
+            result = `Found ${agents.length} agents:\n` +
+              agents.map(a => `  ${a.id}. ${a.name} (${a.type}) - ${a.status}`).join('\n');
           } else if (command.startsWith("tools list")) {
             const tools = await toolsStorage.getActiveTools();
-            result = `Found ${tools.length} active tools:\n` + 
-                    tools.map(t => `  - ${t.name}: ${t.description}`).join('\n');
+            result = `Found ${tools.length} active tools:\n` +
+              tools.map(t => `  - ${t.name}: ${t.description}`).join('\n');
           } else if (command.startsWith("best-practices list")) {
             const practices = await bestPracticesStorage.getBestPractices(10);
-            result = `Found ${practices.length} best practices:\n` + 
-                    practices.map(p => `  - ${p.title} (${p.category}): ${p.description}`).join('\n');
+            result = `Found ${practices.length} best practices:\n` +
+              practices.map(p => `  - ${p.title} (${p.category}): ${p.description}`).join('\n');
           } else if (command.startsWith("best-practices analyze")) {
             const requirements = command.split("--requirements")[1]?.trim().replace(/['"]/g, "") || "";
             if (requirements) {
@@ -530,12 +530,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               const analysis = await inputProcessor.analyzeRequirements(requirements);
               if (analysis) {
                 result = `Analysis Results:\n` +
-                        `Complexity: ${analysis.taskComplexity}\n` +
-                        `Risk Level: ${analysis.riskLevel}\n` +
-                        `Approach: ${analysis.suggestedApproach}\n` +
-                        `Time Estimate: ${analysis.timeEstimate}\n` +
-                        `Required Skills: ${analysis.requiredSkills.join(", ")}\n` +
-                        `Recommendations: ${analysis.customRecommendations.join("; ")}`;
+                  `Complexity: ${analysis.taskComplexity}\n` +
+                  `Risk Level: ${analysis.riskLevel}\n` +
+                  `Approach: ${analysis.suggestedApproach}\n` +
+                  `Time Estimate: ${analysis.timeEstimate}\n` +
+                  `Required Skills: ${analysis.requiredSkills.join(", ")}\n` +
+                  `Recommendations: ${analysis.customRecommendations.join("; ")}`;
               } else {
                 result = "Failed to analyze requirements";
                 status = "error";
@@ -574,8 +574,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           });
         }
 
-        return json({ 
-          success: status === "success", 
+        return json({
+          success: status === "success",
           message: "Command executed",
           output: result,
           executionTime
@@ -585,52 +585,97 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       case "update_agent": {
         const id = parseInt(formData.get("id") as string);
         const status = formData.get("status") as string;
-        
+
         if (!id) {
-          return json({ 
+          return json({
             error: "Agent ID is required",
-            success: false 
+            success: false
           }, { status: 400 });
         }
 
         const updatedAgent = await agentsStorage.updateAgent(id, { status: status as any });
-        
-        return json({ 
-          success: true, 
+
+        return json({
+          success: true,
           message: "Agent updated successfully",
           agent: updatedAgent
         });
       }
 
+      case "create_tool": {
+        const name = formData.get("name") as string;
+        const description = formData.get("description") as string;
+        const category = formData.get("category") as string;
+        const toolType = formData.get("toolType") as 'mcp' | 'cli' | 'openapi';
+        let usage = formData.get("usage") as string;
+
+        if (!name || !description || !category || !toolType) {
+          return json({
+            error: "Missing required fields: name, description, category, and tool type are required",
+            success: false
+          }, { status: 400 });
+        }
+
+        // Auto-fill usage based on tool type if not provided
+        if (!usage) {
+          switch (toolType) {
+            case 'mcp':
+              usage = '无';
+              break;
+            case 'cli':
+              usage = '通过 -h 获取cli的使用方式';
+              break;
+            case 'openapi':
+              usage = '无';
+              break;
+          }
+        }
+
+        const newTool = await toolsStorage.createTool({
+          name,
+          description,
+          category,
+          toolType,
+          usage,
+          isActive: true
+        });
+
+        return json({
+          success: true,
+          message: "Tool created successfully",
+          tool: newTool
+        });
+      }
+
       case "delete_agent": {
         const id = parseInt(formData.get("id") as string);
-        
+
         if (!id) {
-          return json({ 
+          return json({
             error: "Agent ID is required",
-            success: false 
+            success: false
           }, { status: 400 });
         }
 
         await agentsStorage.deleteAgent(id);
-        
-        return json({ 
-          success: true, 
+
+        return json({
+          success: true,
           message: "Agent deleted successfully"
         });
       }
 
       default:
-        return json({ 
+        return json({
           error: "Unknown action",
-          success: false 
+          success: false
         }, { status: 400 });
     }
   } catch (error) {
     console.error("Action error:", error);
-    return json({ 
+    return json({
       error: "Internal server error: " + (error instanceof Error ? error.message : String(error)),
-      success: false 
+      success: false
     }, { status: 500 });
   }
 };
@@ -643,7 +688,7 @@ export default function Index() {
   const isMobile = useIsMobile();
 
   // SPA state management
-  const [activeView, setActiveView] = useState<'dashboard' | 'agents' | 'builder' | 'terminal' | 'best-practices' | 'docs'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'agents' | 'builder' | 'tools' | 'terminal' | 'best-practices' | 'docs'>('dashboard');
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [terminalHistory, setTerminalHistory] = useState<string[]>([
@@ -665,6 +710,42 @@ export default function Index() {
   const [analysisResult, setAnalysisResult] = useState<BestPracticeAnalysis | null>(null);
   const [analysisRequirements, setAnalysisRequirements] = useState("");
 
+  // Tools state
+  const [selectedToolType, setSelectedToolType] = useState<'mcp' | 'cli' | 'openapi' | ''>('');
+  const [toolUsage, setToolUsage] = useState('');
+
+  // Handle tool type change and auto-fill usage
+  const handleToolTypeChange = (value: 'mcp' | 'cli' | 'openapi') => {
+    setSelectedToolType(value);
+    let defaultUsage = '';
+    switch (value) {
+      case 'mcp':
+        defaultUsage = '如果该mcp工具本身没有描述清楚，可以在此补充，否则可不填';
+        break;
+      case 'cli':
+        defaultUsage = '默认通过 -h 获取cli的使用方式，你也可以做格外补充';
+        break;
+      case 'openapi':
+        defaultUsage = '请填入 openapi 接口文档，建议使用 openapi v3｜swagger 格式';
+        break;
+    }
+    setToolUsage(defaultUsage);
+  };
+
+  // Reset tool form
+  const resetToolForm = () => {
+    setSelectedToolType('');
+    setToolUsage('');
+    setIsCreateModalOpen(false);
+  };
+
+  // Handle successful tool creation
+  useEffect(() => {
+    if (actionData?.success && actionData?.tool) {
+      resetToolForm();
+    }
+  }, [actionData]);
+
   const isSubmitting = navigation.state === "submitting";
   const terminalRef = useRef<HTMLDivElement>(null);
 
@@ -676,16 +757,16 @@ export default function Index() {
         description: actionData.message,
         duration: 3000,
       });
-      
+
       if (actionData.output) {
         setTerminalHistory(prev => [...prev, actionData.output, ""]);
       }
-      
+
 
       if (actionData.analysis) {
         setAnalysisResult(actionData.analysis);
       }
-      
+
       if (activeView === 'builder') {
         setIsCreateModalOpen(false);
         setSelectedTools([]);
@@ -705,7 +786,7 @@ export default function Index() {
     if (!command.trim()) return;
 
     const newHistory = [...terminalHistory, `$ ${command}`];
-    
+
     // Simple command processing
     if (command === "help") {
       newHistory.push("Available commands:");
@@ -740,7 +821,7 @@ export default function Index() {
       );
       newHistory.push(`Executing: ${command}...`);
     }
-    
+
     newHistory.push("");
     setTerminalHistory(newHistory);
     setCurrentCommand("");
@@ -761,7 +842,7 @@ export default function Index() {
   // Best practices analysis handler
   const handleAnalyzeRequirements = useCallback(() => {
     if (!analysisRequirements.trim()) return;
-    
+
     const fetcher = useFetcher();
     fetcher.submit({
       intent: "analyze_best_practices",
@@ -807,74 +888,86 @@ export default function Index() {
               v1.0.0
             </Badge>
           </div>
-          
+
           <nav className="hidden md:flex items-center gap-6">
-            <button 
+            <button
               onClick={() => setActiveView("dashboard")}
               className={cn(
                 "font-mono text-sm transition-colors px-3 py-2 rounded-md",
-                activeView === "dashboard" 
-                  ? "bg-cli-teal text-white" 
+                activeView === "dashboard"
+                  ? "bg-cli-teal text-white"
                   : "text-cli-teal hover:bg-cli-teal/10"
               )}
             >
               {safeLucideIcon('BarChart3', 'mr-2 h-4 w-4')}
               Dashboard
             </button>
-            <button 
+            <button
               onClick={() => setActiveView("agents")}
               className={cn(
                 "font-mono text-sm transition-colors px-3 py-2 rounded-md",
-                activeView === "agents" 
-                  ? "bg-cli-teal text-white" 
+                activeView === "agents"
+                  ? "bg-cli-teal text-white"
                   : "text-cli-teal hover:bg-cli-teal/10"
               )}
             >
               {safeLucideIcon('Bot', 'mr-2 h-4 w-4')}
               Agents
             </button>
-            <button 
+            <button
               onClick={() => setActiveView("builder")}
               className={cn(
                 "font-mono text-sm transition-colors px-3 py-2 rounded-md",
-                activeView === "builder" 
-                  ? "bg-cli-teal text-white" 
+                activeView === "builder"
+                  ? "bg-cli-teal text-white"
                   : "text-cli-teal hover:bg-cli-teal/10"
               )}
             >
               {safeLucideIcon('Wrench', 'mr-2 h-4 w-4')}
               Builder
             </button>
-            <button 
+            <button
+              onClick={() => setActiveView("tools")}
+              className={cn(
+                "font-mono text-sm transition-colors px-3 py-2 rounded-md",
+                activeView === "tools"
+                  ? "bg-cli-teal text-white"
+                  : "text-cli-teal hover:bg-cli-teal/10"
+              )}
+            >
+              {safeLucideIcon('Settings', 'mr-2 h-4 w-4')}
+              Tools
+            </button>
+            <button
               onClick={() => setActiveView("best-practices")}
               className={cn(
                 "font-mono text-sm transition-colors px-3 py-2 rounded-md",
-                activeView === "best-practices" 
-                  ? "bg-cli-teal text-white" 
+                activeView === "best-practices"
+                  ? "bg-cli-teal text-white"
                   : "text-cli-teal hover:bg-cli-teal/10"
               )}
             >
               {safeLucideIcon('Lightbulb', 'mr-2 h-4 w-4')}
               Best Practices
             </button>
-            <button 
+            <button
               onClick={() => setActiveView("terminal")}
               className={cn(
                 "font-mono text-sm transition-colors px-3 py-2 rounded-md",
-                activeView === "terminal" 
-                  ? "bg-cli-teal text-white" 
+                activeView === "terminal"
+                  ? "bg-cli-teal text-white"
                   : "text-cli-teal hover:bg-cli-teal/10"
               )}
             >
               {safeLucideIcon('Terminal', 'mr-2 h-4 w-4')}
               Terminal
             </button>
-            <button 
+            <button
               onClick={() => setActiveView("docs")}
               className={cn(
                 "font-mono text-sm transition-colors px-3 py-2 rounded-md",
-                activeView === "docs" 
-                  ? "bg-cli-teal text-white" 
+                activeView === "docs"
+                  ? "bg-cli-teal text-white"
                   : "text-cli-teal hover:bg-cli-teal/10"
               )}
             >
@@ -898,7 +991,7 @@ export default function Index() {
             {/* Hero Section */}
             <div className="text-center space-y-6">
               <div className="relative">
-                <div 
+                <div
                   className="absolute inset-0 bg-cover bg-center opacity-10 rounded-3xl"
                   style={{
                     backgroundImage: 'url(https://images.pexels.com/photos/546819/pexels-photo-546819.jpeg?auto=compress&cs=tinysrgb&w=1200)'
@@ -914,14 +1007,14 @@ export default function Index() {
                     Build and configure agent workflows with best practices guidance and interactive assistance.
                   </p>
                   <div className="flex gap-4 justify-center mt-8">
-                    <Button 
+                    <Button
                       onClick={() => setActiveView("builder")}
                       className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono px-8 py-3 text-lg shadow-cli-glow"
                     >
                       {safeLucideIcon('Wrench', 'mr-2 h-5 w-5')}
                       Start Building
                     </Button>
-                    <Button 
+                    <Button
                       variant="outline"
                       onClick={() => setActiveView("best-practices")}
                       className="border-cli-yellow text-cli-yellow hover:bg-cli-yellow/10 font-mono px-8 py-3 text-lg"
@@ -1073,7 +1166,7 @@ export default function Index() {
                 <div className="space-y-4">
                   <div>
                     <Label className="text-cli-yellow font-mono">Task Requirements</Label>
-                    <Textarea 
+                    <Textarea
                       value={analysisRequirements}
                       onChange={(e) => setAnalysisRequirements(e.target.value)}
                       placeholder="Describe what you want to build. Be specific about inputs, outputs, and expected behavior..."
@@ -1081,7 +1174,7 @@ export default function Index() {
                       className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono focus:border-cli-coral resize-none"
                     />
                   </div>
-                  
+
                   <div>
                     <Label className="text-cli-yellow font-mono">Selected Tools (Optional)</Label>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-32 overflow-y-auto p-4 bg-cli-bg/30 rounded-lg border border-cli-teal/20">
@@ -1099,8 +1192,8 @@ export default function Index() {
                             }}
                             className="border-cli-teal/50"
                           />
-                          <Label 
-                            htmlFor={`analysis-tool-${tool.id}`} 
+                          <Label
+                            htmlFor={`analysis-tool-${tool.id}`}
                             className="text-cli-teal font-mono text-sm cursor-pointer"
                           >
                             {tool.name}
@@ -1110,7 +1203,7 @@ export default function Index() {
                     </div>
                   </div>
 
-                  <Button 
+                  <Button
                     onClick={handleAnalyzeRequirements}
                     disabled={!analysisRequirements.trim() || isSubmitting}
                     className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono shadow-cli-glow"
@@ -1136,7 +1229,7 @@ export default function Index() {
                       {safeLucideIcon('CheckCircle', 'h-5 w-5')}
                       Analysis Results
                     </h4>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-4">
                         <div>
@@ -1147,8 +1240,8 @@ export default function Index() {
                               <Badge variant="outline" className={cn(
                                 "font-mono text-xs",
                                 analysisResult.taskComplexity === 'simple' ? "border-cli-green text-cli-green" :
-                                analysisResult.taskComplexity === 'moderate' ? "border-cli-yellow text-cli-yellow" :
-                                "border-cli-coral text-cli-coral"
+                                  analysisResult.taskComplexity === 'moderate' ? "border-cli-yellow text-cli-yellow" :
+                                    "border-cli-coral text-cli-coral"
                               )}>
                                 {analysisResult.taskComplexity}
                               </Badge>
@@ -1158,8 +1251,8 @@ export default function Index() {
                               <Badge variant="outline" className={cn(
                                 "font-mono text-xs",
                                 analysisResult.riskLevel === 'low' ? "border-cli-green text-cli-green" :
-                                analysisResult.riskLevel === 'medium' ? "border-cli-yellow text-cli-yellow" :
-                                "border-cli-coral text-cli-coral"
+                                  analysisResult.riskLevel === 'medium' ? "border-cli-yellow text-cli-yellow" :
+                                    "border-cli-coral text-cli-coral"
                               )}>
                                 {analysisResult.riskLevel}
                               </Badge>
@@ -1242,7 +1335,7 @@ export default function Index() {
                 {/* Search and Filters */}
                 <div className="flex gap-4">
                   <div className="flex-1">
-                    <Input 
+                    <Input
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search best practices..."
@@ -1274,7 +1367,7 @@ export default function Index() {
                       <SelectItem value="configuration">Configuration</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button 
+                  <Button
                     onClick={handleBestPracticesSearch}
                     className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono"
                   >
@@ -1296,8 +1389,8 @@ export default function Index() {
                             <Badge variant="outline" className={cn(
                               "font-mono text-xs",
                               practice.difficulty === 'beginner' ? "border-cli-green text-cli-green" :
-                              practice.difficulty === 'intermediate' ? "border-cli-yellow text-cli-yellow" :
-                              "border-cli-coral text-cli-coral"
+                                practice.difficulty === 'intermediate' ? "border-cli-yellow text-cli-yellow" :
+                                  "border-cli-coral text-cli-coral"
                             )}>
                               {practice.difficulty}
                             </Badge>
@@ -1313,7 +1406,7 @@ export default function Index() {
                             {safeLucideIcon('Clock', 'h-3 w-3')}
                             <span>{practice.estimatedTime}</span>
                           </div>
-                          
+
                           <div className="flex items-center gap-2 text-xs font-mono text-cli-coral">
                             {safeLucideIcon('Tag', 'h-3 w-3')}
                             <span>{practice.category}</span>
@@ -1353,7 +1446,7 @@ export default function Index() {
                 <h2 className="text-3xl font-mono font-bold text-cli-teal">Agents & Workflows</h2>
                 <p className="text-cli-yellow font-mono mt-2">Manage your AI agents and workflow configurations</p>
               </div>
-              <Button 
+              <Button
                 onClick={() => setActiveView("builder")}
                 className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono shadow-cli-glow"
               >
@@ -1365,7 +1458,7 @@ export default function Index() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {agents.map((agent) => (
                 <Card key={agent.id} className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal hover:shadow-cli-glow transition-all duration-300 cursor-pointer"
-                      onClick={() => setSelectedAgent(agent)}>
+                  onClick={() => setSelectedAgent(agent)}>
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-cli-teal font-mono text-lg flex items-center gap-2">
@@ -1391,8 +1484,8 @@ export default function Index() {
                       <div className="flex items-center justify-between text-xs font-mono">
                         <Badge variant="outline" className={cn(
                           "font-mono",
-                          agent.status === 'active' ? "border-cli-green text-cli-green" : 
-                          agent.status === 'draft' ? "border-cli-yellow text-cli-yellow" : "border-cli-coral text-cli-coral"
+                          agent.status === 'active' ? "border-cli-green text-cli-green" :
+                            agent.status === 'draft' ? "border-cli-yellow text-cli-yellow" : "border-cli-coral text-cli-coral"
                         )}>
                           {agent.status}
                         </Badge>
@@ -1430,7 +1523,7 @@ export default function Index() {
                 <Form method="post" className="space-y-6">
                   <input type="hidden" name="intent" value={`generate_${generationType}`} />
                   <input type="hidden" name="selectedTools" value={JSON.stringify(selectedTools)} />
-                  
+
                   <div className="space-y-2">
                     <Label className="text-cli-yellow font-mono">Configuration Type</Label>
                     <div className="flex gap-4">
@@ -1439,8 +1532,8 @@ export default function Index() {
                         onClick={() => setGenerationType("agent")}
                         className={cn(
                           "px-4 py-2 rounded-lg font-mono text-sm transition-colors",
-                          generationType === "agent" 
-                            ? "bg-cli-teal text-white" 
+                          generationType === "agent"
+                            ? "bg-cli-teal text-white"
                             : "bg-cli-bg/50 text-cli-teal border border-cli-teal/30"
                         )}
                       >
@@ -1452,8 +1545,8 @@ export default function Index() {
                         onClick={() => setGenerationType("workflow")}
                         className={cn(
                           "px-4 py-2 rounded-lg font-mono text-sm transition-colors",
-                          generationType === "workflow" 
-                            ? "bg-cli-teal text-white" 
+                          generationType === "workflow"
+                            ? "bg-cli-teal text-white"
                             : "bg-cli-bg/50 text-cli-teal border border-cli-teal/30"
                         )}
                       >
@@ -1462,21 +1555,21 @@ export default function Index() {
                       </button>
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <Label className="text-cli-yellow font-mono">Name</Label>
-                      <Input 
+                      <Input
                         name="name"
                         placeholder={`e.g., ${generationType === 'agent' ? 'Data Analysis Agent' : 'Code Review Workflow'}`}
                         className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono focus:border-cli-coral"
                         required
                       />
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label className="text-cli-yellow font-mono">Description</Label>
-                      <Input 
+                      <Input
                         name="description"
                         placeholder="Brief description of the purpose"
                         className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono focus:border-cli-coral"
@@ -1487,7 +1580,7 @@ export default function Index() {
 
                   <div className="space-y-2">
                     <Label className="text-cli-yellow font-mono">Task Requirements</Label>
-                    <Textarea 
+                    <Textarea
                       name="taskRequirements"
                       placeholder="Describe what this agent/workflow should accomplish. Be specific about inputs, outputs, and expected behavior."
                       rows={4}
@@ -1516,8 +1609,8 @@ export default function Index() {
                             }}
                             className="border-cli-teal/50"
                           />
-                          <Label 
-                            htmlFor={`tool-${tool.id}`} 
+                          <Label
+                            htmlFor={`tool-${tool.id}`}
                             className="text-cli-teal font-mono text-sm cursor-pointer"
                           >
                             {tool.name}
@@ -1531,7 +1624,7 @@ export default function Index() {
                   </div>
 
                   <div className="flex gap-4 pt-4">
-                    <Button 
+                    <Button
                       type="submit"
                       name="intent"
                       value="validate_config"
@@ -1542,7 +1635,7 @@ export default function Index() {
                       {safeLucideIcon('CheckCircle', 'mr-2 h-4 w-4')}
                       Validate Config
                     </Button>
-                    <Button 
+                    <Button
                       type="submit"
                       disabled={isSubmitting}
                       className="flex-1 bg-cli-teal hover:bg-cli-teal/80 text-white font-mono shadow-cli-glow"
@@ -1580,7 +1673,7 @@ export default function Index() {
                           </>
                         )}
                       </div>
-                      
+
                       {actionData.validation.missingInfo.length > 0 && (
                         <div>
                           <p className="text-cli-coral font-mono text-sm mb-2">Missing Information:</p>
@@ -1591,7 +1684,7 @@ export default function Index() {
                           </ul>
                         </div>
                       )}
-                      
+
                       {actionData.validation.recommendations.length > 0 && (
                         <div>
                           <p className="text-cli-teal font-mono text-sm mb-2">Recommendations:</p>
@@ -1620,7 +1713,7 @@ export default function Index() {
 
             <Card className="bg-cli-terminal border-cli-teal/30 shadow-terminal animate-terminal-glow">
               <CardContent className="p-0">
-                <div 
+                <div
                   ref={terminalRef}
                   className="h-96 overflow-y-auto p-4 font-mono text-sm bg-cli-bg/30"
                   onClick={() => setIsTerminalActive(true)}
@@ -1680,6 +1773,211 @@ export default function Index() {
                 </div>
               </CardContent>
             </Card>
+          </div>
+        )}
+
+        {/* Tools View */}
+        {activeView === 'tools' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-3xl font-mono font-bold text-cli-teal">Tools Management</h2>
+                <p className="text-cli-yellow font-mono mt-2">Manage your MCP, CLI, and OpenAPI tools</p>
+              </div>
+              <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+                <DialogTrigger asChild>
+                  <Button className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono shadow-cli-glow">
+                    {safeLucideIcon('Plus', 'mr-2 h-4 w-4')}
+                    Add Tool
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-cli-terminal border-cli-teal/30 text-cli-green max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle className="text-cli-teal font-mono">Add New Tool</DialogTitle>
+                    <DialogDescription className="text-cli-yellow font-mono">
+                      Configure a new tool for your agent workflows
+                    </DialogDescription>
+                  </DialogHeader>
+                  <Form method="post" className="space-y-4">
+                    <input type="hidden" name="intent" value="create_tool" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="name" className="text-cli-teal font-mono">Tool Name</Label>
+                        <Input
+                          id="name"
+                          name="name"
+                          placeholder="Enter tool name"
+                          className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="category" className="text-cli-teal font-mono">Category</Label>
+                        <Input
+                          id="category"
+                          name="category"
+                          placeholder="e.g., development, productivity"
+                          className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="description" className="text-cli-teal font-mono">Description</Label>
+                      <Textarea
+                        id="description"
+                        name="description"
+                        placeholder="Describe what this tool does"
+                        className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="toolType" className="text-cli-teal font-mono">Tool Type</Label>
+                      <Select name="toolType" value={selectedToolType} onValueChange={handleToolTypeChange} required>
+                        <SelectTrigger className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono">
+                          <SelectValue placeholder="Select tool type" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-cli-terminal border-cli-teal/30">
+                          <SelectItem value="mcp" className="text-cli-green font-mono">MCP</SelectItem>
+                          <SelectItem value="cli" className="text-cli-green font-mono">CLI</SelectItem>
+                          <SelectItem value="openapi" className="text-cli-green font-mono">OpenAPI</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="usage" className="text-cli-teal font-mono">Usage Instructions</Label>
+                      <Textarea
+                        id="usage"
+                        name="usage"
+                        value={toolUsage}
+                        onChange={(e) => setToolUsage(e.target.value)}
+                        placeholder="Usage instructions will be auto-filled based on tool type"
+                        className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono"
+                        rows={4}
+                      />
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={resetToolForm}
+                        className="border-cli-coral text-cli-coral hover:bg-cli-coral/10 font-mono"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono"
+                      >
+                        {isSubmitting ? 'Creating...' : 'Create Tool'}
+                      </Button>
+                    </DialogFooter>
+                  </Form>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {tools.map((tool) => (
+                <Card key={tool.id} className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal hover:shadow-cli-glow transition-all duration-300">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-cli-teal font-mono text-lg flex items-center gap-2">
+                        {safeLucideIcon(
+                          tool.toolType === 'mcp' ? 'Plug' :
+                            tool.toolType === 'cli' ? 'Terminal' : 'Globe',
+                          'h-5 w-5'
+                        )}
+                        {tool.name}
+                      </CardTitle>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className={cn(
+                          "font-mono text-xs",
+                          tool.toolType === 'mcp' ? "border-cli-teal text-cli-teal" :
+                            tool.toolType === 'cli' ? "border-cli-yellow text-cli-yellow" :
+                              "border-cli-coral text-cli-coral"
+                        )}>
+                          {tool.toolType.toUpperCase()}
+                        </Badge>
+                        <Switch
+                          checked={tool.isActive}
+                          className="data-[state=checked]:bg-cli-teal"
+                        />
+                      </div>
+                    </div>
+                    <CardDescription className="text-cli-yellow font-mono">
+                      {tool.description}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-cli-coral font-mono">Category:</span>
+                        <Badge variant="secondary" className="bg-cli-bg/50 text-cli-green font-mono">
+                          {tool.category}
+                        </Badge>
+                      </div>
+                      {tool.usage && (
+                        <div className="space-y-2">
+                          <span className="text-cli-coral font-mono text-sm">Usage:</span>
+                          <p className="text-cli-green font-mono text-xs bg-cli-bg/50 p-2 rounded border border-cli-teal/20 line-clamp-3">
+                            {tool.usage}
+                          </p>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-cli-coral font-mono">Created:</span>
+                        <span className="text-cli-yellow font-mono">
+                          {new Date(tool.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                  <CardFooter className="pt-0">
+                    <div className="flex gap-2 w-full">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 border-cli-teal text-cli-teal hover:bg-cli-teal/10 font-mono"
+                      >
+                        {safeLucideIcon('Edit', 'mr-1 h-3 w-3')}
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-cli-coral text-cli-coral hover:bg-cli-coral/10 font-mono"
+                      >
+                        {safeLucideIcon('Trash2', 'h-3 w-3')}
+                      </Button>
+                    </div>
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+
+            {tools.length === 0 && (
+              <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal">
+                <CardContent className="text-center py-12">
+                  <div className="space-y-4">
+                    {safeLucideIcon('Settings', 'h-12 w-12 text-cli-teal/50 mx-auto')}
+                    <div>
+                      <h3 className="text-cli-teal font-mono text-lg font-semibold">No Tools Configured</h3>
+                      <p className="text-cli-yellow font-mono mt-2">Start by adding your first tool to enhance your agent workflows</p>
+                    </div>
+                    <Button
+                      onClick={() => setIsCreateModalOpen(true)}
+                      className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono"
+                    >
+                      {safeLucideIcon('Plus', 'mr-2 h-4 w-4')}
+                      Add Your First Tool
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 
@@ -1806,7 +2104,7 @@ export default function Index() {
                 {selectedAgent.description}
               </DialogDescription>
             </DialogHeader>
-            
+
             <div className="space-y-6">
               <div>
                 <Label className="text-cli-yellow font-mono">Task Requirements</Label>

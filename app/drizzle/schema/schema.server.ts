@@ -18,6 +18,7 @@ export const stripeCustomersTable = pgTable("stripe_customers", {
 // Agent/Workflow Configuration Tables
 export const agentTypesEnum = pgEnum("agent_types", ["agent", "workflow"]);
 export const agentStatusEnum = pgEnum("agent_status", ["draft", "active", "archived"]);
+export const toolTypeEnum = pgEnum("tool_type", ["mcp", "cli", "openapi"]);
 
 export const agentsTable = pgTable("agents", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
@@ -47,14 +48,8 @@ export const toolsTable = pgTable("tools", {
   name: text().notNull().unique(),
   description: text().notNull(),
   category: text().notNull(),
-  apiEndpoint: text(),
-  parameters: json().$type<Array<{
-    name: string;
-    type: string;
-    required: boolean;
-    description: string;
-    defaultValue?: any;
-  }>>(),
+  toolType: toolTypeEnum().notNull(),
+  usage: text(),
   isActive: boolean().default(true).notNull(),
   createdAt: timestamp().defaultNow().notNull(),
 });

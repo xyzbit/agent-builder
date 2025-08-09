@@ -1,8 +1,8 @@
 // @ts-nocheck
 import { eq, desc, ilike } from "drizzle-orm";
 import { db } from "~/drizzle/config.server";
-import { 
-  type Tool, 
+import {
+  type Tool,
   type InsertTool,
   toolsTable
 } from "~/drizzle/schema/schema.server";
@@ -32,70 +32,60 @@ export class ToolsStorage implements IToolsStorage {
 
     try {
       console.log("[ToolsStorage] Starting sample data initialization...");
-      
+
       const existingTools = await this.client.select().from(toolsTable).limit(1);
       console.log("[ToolsStorage] Found " + existingTools.length + " existing tools");
 
       if (existingTools.length === 0) {
         console.log("[ToolsStorage] No existing tools found, creating sample data...");
-        
+
         const sampleTools = [
           {
             name: "pandas",
             description: "Data manipulation and analysis library for Python",
             category: "Data Analysis",
-            apiEndpoint: "/api/tools/pandas",
-            parameters: [
-              { name: "file_path", type: "string", required: true, description: "Path to data file" },
-              { name: "output_format", type: "select", required: false, description: "Output format", defaultValue: "csv" }
-            ]
+            toolType: "cli" as const,
+            usage: "pip install pandas\nimport pandas as pd\ndf = pd.read_csv('file.csv')\n# Use pandas for data manipulation",
+            isActive: true
           },
           {
             name: "eslint",
             description: "JavaScript linting tool for code quality",
             category: "Code Quality",
-            apiEndpoint: "/api/tools/eslint",
-            parameters: [
-              { name: "file_path", type: "string", required: true, description: "Path to code file" },
-              { name: "config", type: "string", required: false, description: "ESLint configuration" }
-            ]
+            toolType: "cli" as const,
+            usage: "npm install -g eslint\neslint --init\neslint yourfile.js",
+            isActive: true
           },
           {
             name: "security-scanner",
             description: "Security vulnerability scanner",
             category: "Security",
-            apiEndpoint: "/api/tools/security-scanner",
-            parameters: [
-              { name: "target", type: "string", required: true, description: "Target to scan" },
-              { name: "depth", type: "number", required: false, description: "Scan depth", defaultValue: 3 }
-            ]
+            toolType: "cli" as const,
+            usage: "npm install -g security-scanner\nsecurity-scanner scan --target ./project",
+            isActive: true
           },
           {
             name: "matplotlib",
             description: "Python plotting library for data visualization",
             category: "Visualization",
-            apiEndpoint: "/api/tools/matplotlib",
-            parameters: [
-              { name: "data", type: "string", required: true, description: "Data to visualize" },
-              { name: "chart_type", type: "select", required: false, description: "Chart type", defaultValue: "line" }
-            ]
+            toolType: "cli" as const,
+            usage: "pip install matplotlib\nimport matplotlib.pyplot as plt\nplt.plot(data)\nplt.show()",
+            isActive: true
           },
           {
             name: "sonarqube",
             description: "Code quality and security analysis platform",
             category: "Code Quality",
-            apiEndpoint: "/api/tools/sonarqube",
-            parameters: [
-              { name: "project_key", type: "string", required: true, description: "Project identifier" },
-              { name: "branch", type: "string", required: false, description: "Branch to analyze", defaultValue: "main" }
-            ]
+            toolType: "openapi" as const,
+            usage: "SonarQube REST API v2\nBase URL: http://localhost:9000/api\nAuthentication: Basic Auth or Token\nExample: GET /api/projects/search",
+            isActive: true
           }
         ];
 
         for (const toolData of sampleTools) {
           await this.createTool(toolData);
         }
-        
+
         console.log("[ToolsStorage] Created " + sampleTools.length + " sample tools");
       }
 
@@ -112,7 +102,7 @@ export class ToolsStorage implements IToolsStorage {
       ...toolData,
       createdAt: new Date()
     };
-    
+
     const result = await this.client.insert(toolsTable).values(tool).returning();
     return result[0];
   }
@@ -121,11 +111,11 @@ export class ToolsStorage implements IToolsStorage {
     await this.ensureInitialized();
     const result = await this.client.select().from(toolsTable).where(eq(toolsTable.id, id));
     const tool = result[0];
-    
+
     if (tool && tool.createdAt && typeof tool.createdAt === 'string') {
       tool.createdAt = new Date(tool.createdAt);
     }
-    
+
     return tool;
   }
 
@@ -133,11 +123,11 @@ export class ToolsStorage implements IToolsStorage {
     await this.ensureInitialized();
     const result = await this.client.select().from(toolsTable).where(eq(toolsTable.name, name));
     const tool = result[0];
-    
+
     if (tool && tool.createdAt && typeof tool.createdAt === 'string') {
       tool.createdAt = new Date(tool.createdAt);
     }
-    
+
     return tool;
   }
 

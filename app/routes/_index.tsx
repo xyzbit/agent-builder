@@ -650,6 +650,76 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         });
       }
 
+      case "update_tool": {
+        const id = parseInt(formData.get("id") as string);
+        const name = formData.get("name") as string;
+        const description = formData.get("description") as string;
+        const category = formData.get("category") as string;
+        const toolType = formData.get("toolType") as 'mcp' | 'cli' | 'openapi';
+        const usage = formData.get("usage") as string;
+        const isActive = formData.get("isActive") === "true";
+
+        if (!id || !name || !description || !category || !toolType) {
+          return json({
+            error: "Missing required fields",
+            success: false
+          }, { status: 400 });
+        }
+
+        const updatedTool = await toolsStorage.updateTool(id, {
+          name,
+          description,
+          category,
+          toolType,
+          usage,
+          isActive
+        });
+
+        return json({
+          success: true,
+          message: "Tool updated successfully",
+          tool: updatedTool
+        });
+      }
+
+      case "delete_tool": {
+        const id = parseInt(formData.get("id") as string);
+
+        if (!id) {
+          return json({
+            error: "Tool ID is required",
+            success: false
+          }, { status: 400 });
+        }
+
+        await toolsStorage.deleteTool(id);
+
+        return json({
+          success: true,
+          message: "Tool deleted successfully"
+        });
+      }
+
+      case "toggle_tool": {
+        const id = parseInt(formData.get("id") as string);
+        const isActive = formData.get("isActive") === "true";
+
+        if (!id) {
+          return json({
+            error: "Tool ID is required",
+            success: false
+          }, { status: 400 });
+        }
+
+        const updatedTool = await toolsStorage.updateTool(id, { isActive });
+
+        return json({
+          success: true,
+          message: `Tool ${isActive ? 'enabled' : 'disabled'} successfully`,
+          tool: updatedTool
+        });
+      }
+
       case "delete_agent": {
         const id = parseInt(formData.get("id") as string);
 
@@ -684,7 +754,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function Index() {
-  const { agents, tools, recentLogs, recentSessions, bestPractices, cliCommands, stats, error } = useLoaderData<typeof loader>();
+  const { agents, tools, recentLogs, recentSessions, bestPractices, cliCommands, stats } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const { toast } = useToast();
@@ -717,6 +787,13 @@ export default function Index() {
   // Tools state
   const [selectedToolType, setSelectedToolType] = useState<'mcp' | 'cli' | 'openapi' | ''>('');
   const [toolUsage, setToolUsage] = useState('');
+  const [editingTool, setEditingTool] = useState<Tool | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [toolToDelete, setToolToDelete] = useState<Tool | null>(null);
+  
+  // Fetcher for tool operations
+  const toolFetcher = useFetcher();
 
   // Handle tool type change and auto-fill usage
   const handleToolTypeChange = (value: 'mcp' | 'cli' | 'openapi') => {
@@ -749,6 +826,68 @@ export default function Index() {
       resetToolForm();
     }
   }, [actionData]);
+
+  // Handle tool operations
+  const handleEditTool = (tool: Tool) => {
+    setEditingTool(tool);
+    setSelectedToolType(tool.toolType);
+    setToolUsage(tool.usage || '');
+    setIsEditModalOpen(true);
+  };
+
+  const handleDeleteTool = (tool: Tool) => {
+    setToolToDelete(tool);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const confirmDeleteTool = () => {
+    if (toolToDelete) {
+      toolFetcher.submit(
+        { intent: 'delete_tool', id: toolToDelete.id.toString() },
+        { method: 'post' }
+      );
+      setIsDeleteConfirmOpen(false);
+      setToolToDelete(null);
+    }
+  };
+
+  const handleToggleTool = (tool: Tool) => {
+    toolFetcher.submit(
+      { 
+        intent: 'toggle_tool', 
+        id: tool.id.toString(), 
+        isActive: (!tool.isActive).toString() 
+      },
+      { method: 'post' }
+    );
+  };
+
+  const resetEditToolForm = () => {
+    setEditingTool(null);
+    setSelectedToolType('');
+    setToolUsage('');
+    setIsEditModalOpen(false);
+  };
+
+  // Handle tool fetcher responses
+  useEffect(() => {
+    if (toolFetcher.data && 'success' in toolFetcher.data && toolFetcher.data.success) {
+      const message = 'message' in toolFetcher.data ? String(toolFetcher.data.message) : 'Operation completed successfully';
+      toast({
+        title: "Success",
+        description: message,
+      });
+      if ('tool' in toolFetcher.data) {
+        resetEditToolForm();
+      }
+    } else if (toolFetcher.data && 'error' in toolFetcher.data) {
+      toast({
+        title: "Error",
+        description: String(toolFetcher.data.error),
+        variant: "destructive",
+      });
+    }
+  }, [toolFetcher.data, toast]);
 
   const isSubmitting = navigation.state === "submitting";
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -864,19 +1003,7 @@ export default function Index() {
   }, [terminalHistory]);
 
 
-  // Show error state if data loading failed
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-cli-dark via-cli-bg to-cli-terminal flex items-center justify-center">
-        <Alert className="max-w-md bg-cli-terminal/50 border-cli-coral/30">
-          <AlertTitle className="text-cli-coral font-mono">System Error</AlertTitle>
-          <AlertDescription className="text-cli-yellow font-mono">
-            Failed to load application data. Please refresh the page.
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-cli-dark via-cli-bg to-cli-terminal">
@@ -1955,6 +2082,7 @@ export default function Index() {
                         </Badge>
                         <Switch
                           checked={tool.isActive}
+                          onCheckedChange={() => handleToggleTool(tool)}
                           className="data-[state=checked]:bg-cli-teal"
                         />
                       </div>
@@ -1992,6 +2120,7 @@ export default function Index() {
                       <Button
                         variant="outline"
                         size="sm"
+                        onClick={() => handleEditTool(tool)}
                         className="flex-1 border-cli-teal text-cli-teal hover:bg-cli-teal/10 font-mono"
                       >
                         {safeLucideIcon('Edit', 'mr-1 h-3 w-3')}
@@ -2000,6 +2129,7 @@ export default function Index() {
                       <Button
                         variant="outline"
                         size="sm"
+                        onClick={() => handleDeleteTool(tool)}
                         className="border-cli-coral text-cli-coral hover:bg-cli-coral/10 font-mono"
                       >
                         {safeLucideIcon('Trash2', 'h-3 w-3')}
@@ -2181,6 +2311,150 @@ export default function Index() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Edit Tool Modal */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="bg-cli-terminal border-cli-teal/30 text-cli-green max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-cli-teal font-mono">Edit Tool</DialogTitle>
+            <DialogDescription className="text-cli-yellow font-mono">
+              Update the tool configuration
+            </DialogDescription>
+          </DialogHeader>
+          
+          <toolFetcher.Form method="post" className="space-y-4">
+            <input type="hidden" name="intent" value="update_tool" />
+            <input type="hidden" name="toolId" value={editingTool?.id || ''} />
+            
+            <div className="space-y-2">
+              <Label htmlFor="edit-tool-name" className="text-cli-yellow font-mono">Tool Name</Label>
+              <Input
+                id="edit-tool-name"
+                name="name"
+                defaultValue={editingTool?.name || ''}
+                className="bg-cli-bg/50 border-cli-teal/30 text-cli-green font-mono focus:border-cli-teal"
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="edit-tool-description" className="text-cli-yellow font-mono">Description</Label>
+              <Textarea
+                id="edit-tool-description"
+                name="description"
+                defaultValue={editingTool?.description || ''}
+                className="bg-cli-bg/50 border-cli-teal/30 text-cli-green font-mono focus:border-cli-teal min-h-[100px]"
+                required
+              />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-tool-category" className="text-cli-yellow font-mono">Category</Label>
+                <Select name="category" defaultValue={editingTool?.category || ''}>
+                  <SelectTrigger className="bg-cli-bg/50 border-cli-teal/30 text-cli-green font-mono">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-cli-terminal border-cli-teal/30">
+                    <SelectItem value="development" className="text-cli-green font-mono">Development</SelectItem>
+                    <SelectItem value="automation" className="text-cli-green font-mono">Automation</SelectItem>
+                    <SelectItem value="integration" className="text-cli-green font-mono">Integration</SelectItem>
+                    <SelectItem value="analysis" className="text-cli-green font-mono">Analysis</SelectItem>
+                    <SelectItem value="communication" className="text-cli-green font-mono">Communication</SelectItem>
+                    <SelectItem value="other" className="text-cli-green font-mono">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="edit-tool-type" className="text-cli-yellow font-mono">Tool Type</Label>
+                <Select name="toolType" defaultValue={editingTool?.toolType || ''}>
+                  <SelectTrigger className="bg-cli-bg/50 border-cli-teal/30 text-cli-green font-mono">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-cli-terminal border-cli-teal/30">
+                    <SelectItem value="mcp" className="text-cli-green font-mono">MCP</SelectItem>
+                    <SelectItem value="cli" className="text-cli-green font-mono">CLI</SelectItem>
+                    <SelectItem value="openapi" className="text-cli-green font-mono">OpenAPI</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="edit-tool-usage" className="text-cli-yellow font-mono">Usage Instructions</Label>
+              <Textarea
+                id="edit-tool-usage"
+                name="usage"
+                defaultValue={editingTool?.usage || ''}
+                placeholder="Describe how to use this tool..."
+                className="bg-cli-bg/50 border-cli-teal/30 text-cli-green font-mono focus:border-cli-teal min-h-[80px]"
+              />
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <Switch
+                name="isActive"
+                defaultChecked={editingTool?.isActive || false}
+                className="data-[state=checked]:bg-cli-teal"
+              />
+              <Label className="text-cli-yellow font-mono">Tool is active</Label>
+            </div>
+            
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsEditModalOpen(false);
+                  resetEditToolForm();
+                }}
+                className="border-cli-coral text-cli-coral hover:bg-cli-coral/10 font-mono"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono"
+              >
+                Update Tool
+              </Button>
+            </DialogFooter>
+          </toolFetcher.Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="bg-cli-terminal border-cli-coral/30 text-cli-green">
+          <DialogHeader>
+            <DialogTitle className="text-cli-coral font-mono">Delete Tool</DialogTitle>
+            <DialogDescription className="text-cli-yellow font-mono">
+              Are you sure you want to delete "{toolToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDeleteConfirmOpen(false);
+                setToolToDelete(null);
+              }}
+              className="border-cli-teal text-cli-teal hover:bg-cli-teal/10 font-mono"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmDeleteTool}
+              className="bg-cli-coral hover:bg-cli-coral/80 text-white font-mono"
+            >
+              Delete Tool
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

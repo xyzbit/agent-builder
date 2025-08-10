@@ -25,7 +25,7 @@ async function generateWithRetries(prompt: string, retries = 3): Promise<string 
         apiKey: process.env.OPENAI_API_KEY,
         baseURL: process.env.OPENAI_BASE_URL,
       });
-      
+
       const { text } = await generateText({
         model: openaiClient(process.env.OPENAI_MODEL),
         prompt,
@@ -75,7 +75,7 @@ export class AIGenerator {
     try {
       const prompt = this.buildAgentPrompt(request);
       const response = await generateWithRetries(prompt);
-      
+
       if (!response) {
         throw new Error("Failed to generate agent configuration");
       }
@@ -91,7 +91,7 @@ export class AIGenerator {
     try {
       const prompt = this.buildWorkflowPrompt(request);
       const response = await generateWithRetries(prompt);
-      
+
       if (!response) {
         throw new Error("Failed to generate workflow configuration");
       }

@@ -416,6 +416,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         const description = formData.get("description") as string;
         const taskRequirements = formData.get("taskRequirements") as string;
         const selectedTools = JSON.parse(formData.get("selectedTools") as string || "[]");
+        const toolUsageInstructions = JSON.parse(formData.get("toolUsageInstructions") as string || "{}");
         const type = intent === "generate_agent" ? "agent" : "workflow";
 
         if (!name || !description || !taskRequirements) {
@@ -438,9 +439,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
         // Generate agent/workflow
         const generationRequest = {
-          type,
+          type: type as "agent" | "workflow",
           taskRequirements,
           tools: selectedTools,
+          toolUsageInstructions,
           additionalContext: description
         };
 
@@ -477,6 +479,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       case "validate_config": {
         const taskRequirements = formData.get("taskRequirements") as string;
         const selectedTools = JSON.parse(formData.get("selectedTools") as string || "[]");
+        const toolUsageInstructions = JSON.parse(formData.get("toolUsageInstructions") as string || "{}");
 
         if (!taskRequirements) {
           return json({
@@ -700,6 +703,7 @@ export default function Index() {
   const [currentCommand, setCurrentCommand] = useState("");
   const [isTerminalActive, setIsTerminalActive] = useState(false);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
+  const [toolUsageInstructions, setToolUsageInstructions] = useState<Record<string, string>>({});
   const [generationType, setGenerationType] = useState<"agent" | "workflow">("agent");
 
 
@@ -741,7 +745,7 @@ export default function Index() {
 
   // Handle successful tool creation
   useEffect(() => {
-    if (actionData?.success && actionData?.tool) {
+    if (actionData && 'success' in actionData && actionData.success && 'tool' in actionData) {
       resetToolForm();
     }
   }, [actionData]);
@@ -751,30 +755,30 @@ export default function Index() {
 
   // Handle action responses
   useEffect(() => {
-    if (actionData?.success) {
+    if (actionData && 'success' in actionData && actionData.success) {
       toast({
         title: "Success",
-        description: actionData.message,
+        description: (actionData as any).message || "Operation completed",
         duration: 3000,
       });
 
-      if (actionData.output) {
-        setTerminalHistory(prev => [...prev, actionData.output, ""]);
+      if ('output' in actionData && (actionData as any).output) {
+        setTerminalHistory(prev => [...prev, (actionData as any).output, ""]);
       }
 
-
-      if (actionData.analysis) {
-        setAnalysisResult(actionData.analysis);
+      if ('analysis' in actionData && (actionData as any).analysis) {
+        setAnalysisResult((actionData as any).analysis);
       }
 
       if (activeView === 'builder') {
         setIsCreateModalOpen(false);
         setSelectedTools([]);
+        setToolUsageInstructions({});
       }
-    } else if (actionData?.error) {
+    } else if (actionData && 'error' in actionData && (actionData as any).error) {
       toast({
         title: "Error",
-        description: actionData.error,
+        description: (actionData as any).error,
         duration: 5000,
         variant: "destructive"
       });
@@ -1523,6 +1527,7 @@ export default function Index() {
                 <Form method="post" className="space-y-6">
                   <input type="hidden" name="intent" value={`generate_${generationType}`} />
                   <input type="hidden" name="selectedTools" value={JSON.stringify(selectedTools)} />
+                  <input type="hidden" name="toolUsageInstructions" value={JSON.stringify(toolUsageInstructions)} />
 
                   <div className="space-y-2">
                     <Label className="text-cli-yellow font-mono">Configuration Type</Label>
@@ -1603,8 +1608,19 @@ export default function Index() {
                             onCheckedChange={(checked) => {
                               if (checked) {
                                 setSelectedTools([...selectedTools, tool.name]);
+                                // Initialize usage instruction for this tool
+                                setToolUsageInstructions(prev => ({
+                                  ...prev,
+                                  [tool.name]: prev[tool.name] || ''
+                                }));
                               } else {
                                 setSelectedTools(selectedTools.filter(t => t !== tool.name));
+                                // Remove usage instruction for this tool
+                                setToolUsageInstructions(prev => {
+                                  const newInstructions = { ...prev };
+                                  delete newInstructions[tool.name];
+                                  return newInstructions;
+                                });
                               }
                             }}
                             className="border-cli-teal/50"
@@ -1622,6 +1638,42 @@ export default function Index() {
                       Selected: {selectedTools.length} tools
                     </p>
                   </div>
+
+                  {/* Tool Usage Instructions */}
+                  {selectedTools.length > 0 && (
+                    <div className="space-y-4">
+                      <Label className="text-cli-yellow font-mono">Tool Usage Instructions</Label>
+                      <div className="space-y-3">
+                        {selectedTools.map((toolName) => {
+                          const tool = tools.find(t => t.name === toolName);
+                          return (
+                            <div key={toolName} className="space-y-2">
+                              <Label className="text-cli-teal font-mono text-sm">
+                                {toolName} - 使用说明
+                              </Label>
+                              <Textarea
+                                placeholder={`请描述在此${generationType === 'agent' ? 'agent' : 'workflow'}中如何使用 ${toolName} 工具...`}
+                                value={toolUsageInstructions[toolName] || ''}
+                                onChange={(e) => {
+                                  setToolUsageInstructions(prev => ({
+                                    ...prev,
+                                    [toolName]: e.target.value
+                                  }));
+                                }}
+                                rows={2}
+                                className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono text-sm focus:border-cli-coral resize-none"
+                              />
+                              {tool?.description && (
+                                <p className="text-xs text-cli-coral/70 font-mono">
+                                  工具描述: {tool.description}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex gap-4 pt-4">
                     <Button
@@ -1656,12 +1708,12 @@ export default function Index() {
                 </Form>
 
                 {/* Validation Results */}
-                {actionData?.validation && (
+                {actionData && 'validation' in actionData && (actionData as any).validation && (
                   <div className="mt-6 p-4 bg-cli-bg/50 rounded-lg border border-cli-teal/20">
                     <h4 className="font-mono font-semibold text-cli-teal mb-3">Configuration Validation</h4>
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
-                        {actionData.validation.isComplete ? (
+                        {(actionData as any).validation.isComplete ? (
                           <>
                             {safeLucideIcon('CheckCircle', 'h-5 w-5 text-cli-green')}
                             <span className="text-cli-green font-mono">Configuration is complete</span>
@@ -1674,22 +1726,22 @@ export default function Index() {
                         )}
                       </div>
 
-                      {actionData.validation.missingInfo.length > 0 && (
+                      {(actionData as any).validation.missingInfo.length > 0 && (
                         <div>
                           <p className="text-cli-coral font-mono text-sm mb-2">Missing Information:</p>
                           <ul className="list-disc list-inside space-y-1">
-                            {actionData.validation.missingInfo.map((info: string, index: number) => (
+                            {(actionData as any).validation.missingInfo.map((info: string, index: number) => (
                               <li key={index} className="text-cli-yellow font-mono text-sm">{info}</li>
                             ))}
                           </ul>
                         </div>
                       )}
 
-                      {actionData.validation.recommendations.length > 0 && (
+                      {(actionData as any).validation.recommendations.length > 0 && (
                         <div>
                           <p className="text-cli-teal font-mono text-sm mb-2">Recommendations:</p>
                           <ul className="list-disc list-inside space-y-1">
-                            {actionData.validation.recommendations.map((rec: string, index: number) => (
+                            {(actionData as any).validation.recommendations.map((rec: string, index: number) => (
                               <li key={index} className="text-cli-green font-mono text-sm">{rec}</li>
                             ))}
                           </ul>

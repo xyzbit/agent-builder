@@ -49,6 +49,7 @@ export interface AgentGenerationRequest {
   type: "agent" | "workflow";
   taskRequirements: string;
   tools: string[];
+  toolUsageInstructions?: Record<string, string>;
   additionalContext?: string;
 }
 

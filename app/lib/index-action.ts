@@ -184,6 +184,7 @@ export const createAction = async ({ request }: ActionFunctionArgs) => {
         const description = formData.get("description") as string;
         const taskRequirements = formData.get("taskRequirements") as string;
         const selectedTools = JSON.parse(formData.get("selectedTools") as string || "[]");
+        const selectedReferences = JSON.parse(formData.get("selectedReferences") as string || "[]");
         const toolUsageInstructions = JSON.parse(formData.get("toolUsageInstructions") as string || "{}");
         const type = intent === "generate_agent" ? "agent" : "workflow";
 
@@ -194,24 +195,20 @@ export const createAction = async ({ request }: ActionFunctionArgs) => {
           }, { status: 400 });
         }
 
-        // Validate configuration first
-        const validation = await aiGenerator.validateConfiguration(taskRequirements, selectedTools);
-
-        if (!validation.isComplete) {
-          return json({
-            success: false,
-            validation,
-            message: "Configuration needs improvement before generation"
-          });
-        }
-
-        // Generate agent/workflow
+        // Get all available tools and references for AI selection
+        const allTools = await toolsStorage.getActiveTools();
+        const allReferences = await refsStorage.getActiveReferences();
+        
+        // Generate agent/workflow with intelligent tool and reference selection
         const generationRequest = {
           type: type as "agent" | "workflow",
           taskRequirements,
           tools: selectedTools,
+          references: selectedReferences,
           toolUsageInstructions,
-          additionalContext: description
+          additionalContext: description,
+          allAvailableTools: allTools.map(t => ({ name: t.name, description: t.description })),
+          allAvailableReferences: allReferences.map(r => ({ name: r.name, description: r.description, category: r.category }))
         };
 
         const aiResponse = type === "agent"
@@ -223,6 +220,19 @@ export const createAction = async ({ request }: ActionFunctionArgs) => {
             error: "Failed to generate configuration. Please try again.",
             success: false
           }, { status: 500 });
+        }
+
+        // Check completeness score and handle low scores
+        if (aiResponse.completenessScore < 70) {
+          return json({
+            success: false,
+            completenessScore: aiResponse.completenessScore,
+            selectedTools: aiResponse.selectedTools,
+            selectedReferences: aiResponse.selectedReferences,
+            missingInfo: aiResponse.missingInfo || [],
+            message: "Configuration needs improvement",
+            showMissingInfo: true
+          });
         }
 
         // Create agent in database
@@ -240,7 +250,11 @@ export const createAction = async ({ request }: ActionFunctionArgs) => {
           success: true,
           message: `${type.charAt(0).toUpperCase() + type.slice(1)} generated successfully`,
           agent: newAgent,
-          aiResponse
+          aiResponse,
+          completenessScore: aiResponse.completenessScore,
+          selectedTools: aiResponse.selectedTools,
+          selectedReferences: aiResponse.selectedReferences,
+          showCelebration: true
         });
       }
 

@@ -8,6 +8,7 @@ export function useAppState() {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
+  const [selectedReferences, setSelectedReferences] = useState<string[]>([]);
   const [toolUsageInstructions, setToolUsageInstructions] = useState<Record<string, string>>({});
   const [generationType, setGenerationType] = useState<GenerationType>("agent");
 
@@ -54,6 +55,8 @@ export function useAppState() {
     // Tool states
     selectedTools,
     setSelectedTools,
+    selectedReferences,
+    setSelectedReferences,
     toolUsageInstructions,
     setToolUsageInstructions,
     generationType,

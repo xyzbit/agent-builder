@@ -43,13 +43,19 @@ export const action = createAction;
 
 export default function Index() {
   const { agents, tools, allTools, references, cliCommands, stats } = useLoaderData<typeof loader>();
+  
+  // Type casting for Date serialization issues
+  const typedAgents = agents as any[];
+  const typedTools = tools as any[];
+  const typedAllTools = allTools as any[];
+  const typedReferences = references as any[];
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const { toast } = useToast();
 
   // Use custom hooks
   const appState = useAppState();
-  const terminal = useTerminal(cliCommands, agents, tools, references);
+  const terminal = useTerminal(cliCommands, typedAgents, typedTools, typedReferences);
   const toolHandlers = useToolHandlers();
   const referenceHandlers = useReferenceHandlers();
 
@@ -74,7 +80,7 @@ export default function Index() {
   }, [referenceHandlers.shouldResetEditReferenceForm]);
 
   // Filter references based on search query and category
-  const filteredReferences = references.filter((reference) => {
+  const filteredReferences = typedReferences.filter((reference: any) => {
     const matchesSearch = appState.searchQuery === "" || 
       reference.name.toLowerCase().includes(appState.searchQuery.toLowerCase()) ||
       reference.description.toLowerCase().includes(appState.searchQuery.toLowerCase());
@@ -111,6 +117,7 @@ export default function Index() {
       if (appState.activeView === 'builder') {
         appState.setIsCreateModalOpen(false);
         appState.setSelectedTools([]);
+        appState.setSelectedReferences([]);
         appState.setToolUsageInstructions({});
       }
     } else if (actionData && 'error' in actionData && (actionData as any).error) {
@@ -133,8 +140,8 @@ export default function Index() {
         {/* Dashboard View */}
         {appState.activeView === 'dashboard' && (
           <DashboardView 
-            agents={agents}
-            references={references}
+            agents={typedAgents}
+            references={typedReferences}
             stats={stats}
             setActiveView={appState.setActiveView}
             setIsCreateReferenceModalOpen={appState.setIsCreateReferenceModalOpen}
@@ -147,7 +154,7 @@ export default function Index() {
         {/* Agents View */}
         {appState.activeView === 'agents' && (
           <AgentsView 
-            agents={agents}
+            agents={typedAgents}
             setActiveView={appState.setActiveView}
             setSelectedAgent={appState.setSelectedAgent}
           />
@@ -170,9 +177,12 @@ export default function Index() {
         {/* Builder View */}
         {appState.activeView === 'builder' && (
           <BuilderView 
-            tools={tools}
+            tools={typedTools}
+            references={typedReferences}
             selectedTools={appState.selectedTools}
             setSelectedTools={appState.setSelectedTools}
+            selectedReferences={appState.selectedReferences}
+            setSelectedReferences={appState.setSelectedReferences}
             toolUsageInstructions={appState.toolUsageInstructions}
             setToolUsageInstructions={appState.setToolUsageInstructions}
             generationType={appState.generationType}
@@ -185,7 +195,7 @@ export default function Index() {
         {/* Tools View */}
         {appState.activeView === 'tools' && (
           <ToolsView 
-            allTools={allTools}
+            allTools={typedAllTools}
             handleEditTool={(tool) => toolHandlers.handleEditTool(
               tool,
               appState.setEditingTool,

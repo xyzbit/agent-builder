@@ -121,26 +121,18 @@ interface ProcessingResult {
   followUpQuestions?: string[];
 }
 
-interface BestPractice {
+interface Reference {
   id: number;
-  title: string;
+  name: string;
   description: string;
   category: string;
-  type: string;
-  status: string;
-  tags: string[];
+  isActive: boolean;
   content: string;
-  examples?: any[];
-  relatedTools: string[];
-  difficulty: string;
-  estimatedTime: string;
-  benefits: string[];
-  commonMistakes: string[];
   createdAt: Date;
   updatedAt: Date;
 }
 
-interface BestPracticeAnalysis {
+interface ReferenceAnalysis {
   taskComplexity: "simple" | "moderate" | "complex";
   riskLevel: "low" | "medium" | "high";
   suggestedApproach: string;
@@ -164,15 +156,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const { toolsStorage } = await import("~/lib/.server/tools.storage");
     const { executionLogsStorage } = await import("~/lib/.server/execution-logs.storage");
     const { userSessionsStorage } = await import("~/lib/.server/user-sessions.storage");
-    const { bestPracticesStorage } = await import("~/lib/.server/best-practices.storage");
+    const { refsStorage } = await import("~/lib/.server/refs.storage");
 
     // Load data for the SPA
-    const [agents, tools, recentLogs, recentSessions, bestPractices] = await Promise.all([
+    const [agents, tools, allTools, recentLogs, recentSessions, references] = await Promise.all([
       agentsStorage.getAgents(10),
       toolsStorage.getActiveTools(),
+      toolsStorage.getTools(100), // All tools for management page
       executionLogsStorage.getRecentLogs(5),
       userSessionsStorage.getRecentSessions(5),
-      bestPracticesStorage.getBestPractices(20)
+      refsStorage.getReferences(20)
     ]);
 
     // Mock data for CLI commands
@@ -214,26 +207,27 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         category: "Configuration"
       },
       {
-        command: "best-practices analyze",
-        description: "Analyze requirements for best practices",
-        example: "best-practices analyze --requirements 'process CSV data'",
-        category: "Best Practices"
+        command: "refs list",
+        description: "List all reference documents",
+        example: "refs list --category 'API Documentation'",
+        category: "References"
       }
     ];
 
     return json({
       agents,
       tools,
+      allTools,
       recentLogs,
       recentSessions,
-      bestPractices,
+      references,
       cliCommands,
       stats: {
         totalAgents: agents.length,
-        totalTools: tools.length,
+        totalTools: allTools.length,
         activeAgents: agents.filter(a => a.status === 'active').length,
         activeSessions: recentSessions.filter(s => s.status === 'active').length,
-        totalBestPractices: bestPractices.length,
+        totalReferences: references.length,
         lastUpdated: new Date().toISOString()
       }
     });
@@ -242,16 +236,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return json({
       agents: [],
       tools: [],
+      allTools: [],
       recentLogs: [],
       recentSessions: [],
-      bestPractices: [],
+      references: [],
       cliCommands: [],
       stats: {
         totalAgents: 0,
         totalTools: 0,
         activeAgents: 0,
         activeSessions: 0,
-        totalBestPractices: 0,
+        totalReferences: 0,
         lastUpdated: new Date().toISOString()
       },
       error: "Failed to load data"
@@ -269,83 +264,110 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const { toolsStorage } = await import("~/lib/.server/tools.storage");
     const { executionLogsStorage } = await import("~/lib/.server/execution-logs.storage");
     const { userSessionsStorage } = await import("~/lib/.server/user-sessions.storage");
-    const { bestPracticesStorage } = await import("~/lib/.server/best-practices.storage");
+    const { refsStorage } = await import("~/lib/.server/refs.storage");
     const { aiGenerator } = await import("~/lib/.server/ai-generator");
 
     switch (intent) {
-      case "analyze_best_practices": {
-        const requirements = formData.get("requirements") as string;
-        const taskType = formData.get("taskType") as string || "general";
-        const selectedTools = JSON.parse(formData.get("selectedTools") as string || "[]");
+      case "create_reference": {
+        const name = formData.get("name") as string;
+        const description = formData.get("description") as string;
+        const category = formData.get("category") as string;
+        const content = formData.get("content") as string;
 
-        if (!requirements) {
+        if (!name || !description || !category || !content) {
           return json({
-            error: "Requirements are required for best practice analysis",
+            error: "All fields are required",
             success: false
           }, { status: 400 });
         }
 
-        const { inputProcessor } = await import("~/lib/.server/input-processor");
-        const analysis = await inputProcessor.provideBestPracticeRecommendations(
-          taskType,
-          requirements,
-          selectedTools
-        );
-
-        if (!analysis) {
-          return json({
-            error: "Failed to analyze best practices",
-            success: false
-          }, { status: 500 });
-        }
-
-        // Store the recommendation
-        await bestPracticesStorage.createRecommendation({
-          sessionId: `analysis_${Date.now()}`,
-          userInput: requirements,
-          taskType,
-          selectedTools,
-          recommendedPractices: [],
-          analysisResults: {
-            complexity: analysis.taskComplexity,
-            riskLevel: analysis.riskLevel,
-            suggestedApproach: analysis.suggestedApproach,
-            timeEstimate: analysis.timeEstimate,
-            requiredSkills: analysis.requiredSkills,
-            potentialChallenges: analysis.potentialChallenges
-          },
-          customRecommendations: analysis.customRecommendations,
-          confidence: analysis.confidence
+        const reference = await refsStorage.createReference({
+          name,
+          description,
+          category,
+          content,
+          isActive: true
         });
 
         return json({
           success: true,
-          message: "Best practice analysis completed",
-          analysis
+          message: "Reference created successfully",
+          reference
         });
       }
 
-      case "search_best_practices": {
-        const query = formData.get("query") as string;
+      case "update_reference": {
+        const id = parseInt(formData.get("id") as string);
+        const name = formData.get("name") as string;
+        const description = formData.get("description") as string;
         const category = formData.get("category") as string;
-        const type = formData.get("type") as string;
+        const content = formData.get("content") as string;
 
-        let practices: BestPractice[] = [];
-
-        if (query) {
-          practices = await bestPracticesStorage.searchBestPractices(query, 20);
-        } else if (category) {
-          practices = await bestPracticesStorage.getBestPracticesByCategory(category, 20);
-        } else if (type) {
-          practices = await bestPracticesStorage.getBestPracticesByType(type, 20);
-        } else {
-          practices = await bestPracticesStorage.getBestPractices(20);
+        if (!id || !name || !description || !category || !content) {
+          return json({
+            error: "All fields are required",
+            success: false
+          }, { status: 400 });
         }
+
+        const reference = await refsStorage.updateReference(id, {
+          name,
+          description,
+          category,
+          content
+        });
 
         return json({
           success: true,
-          practices,
-          message: `Found ${practices.length} best practices`
+          message: "Reference updated successfully",
+          reference
+        });
+      }
+
+      case "delete_reference": {
+        const id = parseInt(formData.get("id") as string);
+
+        if (!id) {
+          return json({
+            error: "Reference ID is required",
+            success: false
+          }, { status: 400 });
+        }
+
+        await refsStorage.deleteReference(id);
+
+        return json({
+          success: true,
+          message: "Reference deleted successfully"
+        });
+      }
+
+      case "toggle_reference": {
+        const id = parseInt(formData.get("id") as string);
+
+        if (!id) {
+          return json({
+            error: "Reference ID is required",
+            success: false
+          }, { status: 400 });
+        }
+
+        // First get the current reference to know its current status
+        const currentReference = await refsStorage.getReferenceById(id);
+        if (!currentReference) {
+          return json({
+            error: "Reference not found",
+            success: false
+          }, { status: 404 });
+        }
+
+        // Toggle the status
+        const reference = await refsStorage.toggleReferenceStatus(id, !currentReference.isActive);
+
+        return json({
+          success: true,
+          message: `Reference ${reference?.isActive ? 'activated' : 'deactivated'} successfully`,
+          reference
         });
       }
 
@@ -522,31 +544,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             const tools = await toolsStorage.getActiveTools();
             result = `Found ${tools.length} active tools:\n` +
               tools.map(t => `  - ${t.name}: ${t.description}`).join('\n');
-          } else if (command.startsWith("best-practices list")) {
-            const practices = await bestPracticesStorage.getBestPractices(10);
-            result = `Found ${practices.length} best practices:\n` +
-              practices.map(p => `  - ${p.title} (${p.category}): ${p.description}`).join('\n');
-          } else if (command.startsWith("best-practices analyze")) {
-            const requirements = command.split("--requirements")[1]?.trim().replace(/['"]/g, "") || "";
-            if (requirements) {
-              const { inputProcessor } = await import("~/lib/.server/input-processor");
-              const analysis = await inputProcessor.analyzeRequirements(requirements);
-              if (analysis) {
-                result = `Analysis Results:\n` +
-                  `Complexity: ${analysis.taskComplexity}\n` +
-                  `Risk Level: ${analysis.riskLevel}\n` +
-                  `Approach: ${analysis.suggestedApproach}\n` +
-                  `Time Estimate: ${analysis.timeEstimate}\n` +
-                  `Required Skills: ${analysis.requiredSkills.join(", ")}\n` +
-                  `Recommendations: ${analysis.customRecommendations.join("; ")}`;
-              } else {
-                result = "Failed to analyze requirements";
-                status = "error";
-              }
-            } else {
-              result = "Error: --requirements parameter is required";
-              status = "error";
-            }
+          } else if (command.startsWith("refs list")) {
+            const references = await refsStorage.getReferences(10);
+            result = `Found ${references.length} references:\n` +
+              references.map(r => `  - ${r.name} (${r.category}): ${r.description}`).join('\n');
           } else if (command.startsWith("agent run") && agentId) {
             const agent = await agentsStorage.getAgentById(agentId);
             if (agent) {
@@ -754,35 +755,34 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function Index() {
-  const { agents, tools, recentLogs, recentSessions, bestPractices, cliCommands, stats } = useLoaderData<typeof loader>();
+  const { agents, tools, allTools, recentLogs, recentSessions, references, cliCommands, stats } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
   // SPA state management
-  const [activeView, setActiveView] = useState<'dashboard' | 'agents' | 'builder' | 'tools' | 'terminal' | 'best-practices' | 'docs'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'agents' | 'builder' | 'tools' | 'terminal' | 'references' | 'docs'>('dashboard');
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [terminalHistory, setTerminalHistory] = useState<string[]>([
     "Welcome to CLI Prompt Builder v1.0.0",
     "Type 'help' for available commands",
-    "Type 'best-practices list' to view best practices",
+    "Type 'refs list' to view references",
     ""
   ]);
   const [currentCommand, setCurrentCommand] = useState("");
   const [isTerminalActive, setIsTerminalActive] = useState(false);
+
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
   const [toolUsageInstructions, setToolUsageInstructions] = useState<Record<string, string>>({});
   const [generationType, setGenerationType] = useState<"agent" | "workflow">("agent");
 
 
-  // Best practices state
+  // References state
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [selectedType, setSelectedType] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [analysisResult, setAnalysisResult] = useState<BestPracticeAnalysis | null>(null);
-  const [analysisRequirements, setAnalysisRequirements] = useState("");
+
 
   // Tools state
   const [selectedToolType, setSelectedToolType] = useState<'mcp' | 'cli' | 'openapi' | ''>('');
@@ -792,8 +792,18 @@ export default function Index() {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [toolToDelete, setToolToDelete] = useState<Tool | null>(null);
   
+  // Reference management states
+  const [editingReference, setEditingReference] = useState<Reference | null>(null);
+  const [isEditReferenceModalOpen, setIsEditReferenceModalOpen] = useState(false);
+  const [isDeleteReferenceConfirmOpen, setIsDeleteReferenceConfirmOpen] = useState(false);
+  const [referenceToDelete, setReferenceToDelete] = useState<Reference | null>(null);
+  const [isCreateReferenceModalOpen, setIsCreateReferenceModalOpen] = useState(false);
+  
   // Fetcher for tool operations
   const toolFetcher = useFetcher();
+  
+  // Fetcher for reference operations
+  const referenceFetcher = useFetcher();
 
   // Handle tool type change and auto-fill usage
   const handleToolTypeChange = (value: 'mcp' | 'cli' | 'openapi') => {
@@ -862,11 +872,52 @@ export default function Index() {
     );
   };
 
+  // Handle reference operations
+  const handleEditReference = (reference: Reference) => {
+    setEditingReference(reference);
+    setIsEditReferenceModalOpen(true);
+  };
+
+  const handleDeleteReference = (reference: Reference) => {
+    setReferenceToDelete(reference);
+    setIsDeleteReferenceConfirmOpen(true);
+  };
+
+  const confirmDeleteReference = () => {
+    if (referenceToDelete) {
+      referenceFetcher.submit(
+        { intent: 'delete_reference', id: referenceToDelete.id.toString() },
+        { method: 'post' }
+      );
+      setIsDeleteReferenceConfirmOpen(false);
+      setReferenceToDelete(null);
+    }
+  };
+
+  const handleToggleReference = (reference: Reference) => {
+    referenceFetcher.submit(
+      { 
+        intent: 'toggle_reference', 
+        id: reference.id.toString()
+      },
+      { method: 'post' }
+    );
+  };
+
   const resetEditToolForm = () => {
     setEditingTool(null);
     setSelectedToolType('');
     setToolUsage('');
     setIsEditModalOpen(false);
+  };
+
+  const resetReferenceForm = () => {
+    setIsCreateReferenceModalOpen(false);
+  };
+
+  const resetEditReferenceForm = () => {
+    setEditingReference(null);
+    setIsEditReferenceModalOpen(false);
   };
 
   // Handle tool fetcher responses
@@ -889,6 +940,27 @@ export default function Index() {
     }
   }, [toolFetcher.data, toast]);
 
+  // Handle reference fetcher responses
+  useEffect(() => {
+    if (referenceFetcher.data && 'success' in referenceFetcher.data && referenceFetcher.data.success) {
+      const message = 'message' in referenceFetcher.data ? String(referenceFetcher.data.message) : 'Operation completed successfully';
+      toast({
+        title: "Success",
+        description: message,
+      });
+      if ('reference' in referenceFetcher.data) {
+        resetEditReferenceForm();
+        resetReferenceForm();
+      }
+    } else if (referenceFetcher.data && 'error' in referenceFetcher.data) {
+      toast({
+        title: "Error",
+        description: String(referenceFetcher.data.error),
+        variant: "destructive",
+      });
+    }
+  }, [referenceFetcher.data, toast]);
+
   const isSubmitting = navigation.state === "submitting";
   const terminalRef = useRef<HTMLDivElement>(null);
 
@@ -903,10 +975,6 @@ export default function Index() {
 
       if ('output' in actionData && (actionData as any).output) {
         setTerminalHistory(prev => [...prev, (actionData as any).output, ""]);
-      }
-
-      if ('analysis' in actionData && (actionData as any).analysis) {
-        setAnalysisResult((actionData as any).analysis);
       }
 
       if (activeView === 'builder') {
@@ -950,10 +1018,10 @@ export default function Index() {
       tools.forEach((tool, index) => {
         newHistory.push(`  ${index + 1}. ${tool.name} - ${tool.description}`);
       });
-    } else if (command.startsWith("best-practices")) {
-      newHistory.push("Available best practices:");
-      bestPractices.slice(0, 5).forEach((practice, index) => {
-        newHistory.push(`  ${index + 1}. ${practice.title} (${practice.category})`);
+    } else if (command.startsWith("refs")) {
+      newHistory.push("Available references:");
+      references.slice(0, 5).forEach((reference, index) => {
+        newHistory.push(`  ${index + 1}. ${reference.name} (${reference.category})`);
       });
     } else {
       // Submit command to server
@@ -968,32 +1036,22 @@ export default function Index() {
     newHistory.push("");
     setTerminalHistory(newHistory);
     setCurrentCommand("");
-  }, [terminalHistory, cliCommands, agents, tools, bestPractices]);
+  }, [terminalHistory, cliCommands, agents, tools, references]);
 
 
-  // Best practices search handler
-  const handleBestPracticesSearch = useCallback(() => {
-    const fetcher = useFetcher();
-    fetcher.submit({
-      intent: "search_best_practices",
-      query: searchQuery,
-      category: selectedCategory !== "all" ? selectedCategory : "",
-      type: selectedType !== "all" ? selectedType : ""
-    }, { method: "POST" });
-  }, [searchQuery, selectedCategory, selectedType]);
+  // Filter references based on search query and category
+  const filteredReferences = references.filter((reference) => {
+    const matchesSearch = searchQuery === "" || 
+      reference.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      reference.description.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesCategory = selectedCategory === "all" || 
+      reference.category === selectedCategory;
+    
+    return matchesSearch && matchesCategory;
+  });
 
-  // Best practices analysis handler
-  const handleAnalyzeRequirements = useCallback(() => {
-    if (!analysisRequirements.trim()) return;
 
-    const fetcher = useFetcher();
-    fetcher.submit({
-      intent: "analyze_best_practices",
-      requirements: analysisRequirements,
-      taskType: "general",
-      selectedTools: JSON.stringify(selectedTools)
-    }, { method: "POST" });
-  }, [analysisRequirements, selectedTools]);
 
   // Auto-scroll terminal and guidance
   useEffect(() => {
@@ -1070,16 +1128,16 @@ export default function Index() {
               Tools
             </button>
             <button
-              onClick={() => setActiveView("best-practices")}
+              onClick={() => setActiveView("references")}
               className={cn(
                 "font-mono text-sm transition-colors px-3 py-2 rounded-md",
-                activeView === "best-practices"
+                activeView === "references"
                   ? "bg-cli-teal text-white"
                   : "text-cli-teal hover:bg-cli-teal/10"
               )}
             >
               {safeLucideIcon('Lightbulb', 'mr-2 h-4 w-4')}
-              Best Practices
+              References
             </button>
             <button
               onClick={() => setActiveView("terminal")}
@@ -1135,7 +1193,7 @@ export default function Index() {
                     </span>
                   </h1>
                   <p className="text-lg text-cli-yellow max-w-2xl mx-auto font-mono leading-relaxed">
-                    Build and configure agent workflows with best practices guidance and interactive assistance.
+                    Build and configure agent workflows with references guidance and interactive assistance.
                   </p>
                   <div className="flex gap-4 justify-center mt-8">
                     <Button
@@ -1147,11 +1205,11 @@ export default function Index() {
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={() => setActiveView("best-practices")}
+                      onClick={() => setActiveView("references")}
                       className="border-cli-yellow text-cli-yellow hover:bg-cli-yellow/10 font-mono px-8 py-3 text-lg"
                     >
                       {safeLucideIcon('Lightbulb', 'mr-2 h-5 w-5')}
-                      Best Practices
+                      References
                     </Button>
                   </div>
                 </div>
@@ -1220,8 +1278,8 @@ export default function Index() {
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-cli-yellow font-mono text-sm">Best Practices</p>
-                      <p className="text-3xl font-mono font-bold text-cli-amber">{stats.totalBestPractices}</p>
+                      <p className="text-cli-yellow font-mono text-sm">References</p>
+                      <p className="text-3xl font-mono font-bold text-cli-amber">{stats.totalReferences}</p>
                     </div>
                     <div className="w-12 h-12 bg-cli-amber/20 rounded-lg flex items-center justify-center">
                       {safeLucideIcon('Lightbulb', 'h-6 w-6 text-cli-amber')}
@@ -1268,199 +1326,143 @@ export default function Index() {
                       </div>
                     </div>
                   ))}
+                  
+                  {filteredReferences.length === 0 && (
+                    <div className="col-span-full text-center py-12">
+                      <div className="space-y-4">
+                        {safeLucideIcon('FileText', 'h-12 w-12 text-cli-teal/50 mx-auto')}
+                        <div>
+                          <h3 className="text-cli-teal font-mono text-lg font-semibold">
+                            {searchQuery || selectedCategory !== 'all' ? 'No matching references found' : 'No references available'}
+                          </h3>
+                          <p className="text-cli-yellow font-mono mt-2">
+                            {searchQuery || selectedCategory !== 'all' 
+                              ? 'Try adjusting your search or filter criteria' 
+                              : 'Start by adding your first reference to build your knowledge base'
+                            }
+                          </p>
+                        </div>
+                        {!searchQuery && selectedCategory === 'all' && (
+                          <Button
+                            onClick={() => setIsCreateReferenceModalOpen(true)}
+                            className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono"
+                          >
+                            {safeLucideIcon('Plus', 'mr-2 h-4 w-4')}
+                            Add Your First Reference
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
           </div>
         )}
 
-        {/* Best Practices View */}
-        {activeView === 'best-practices' && (
+        {/* References View */}
+        {activeView === 'references' && (
           <div className="space-y-6">
-            <div className="text-center space-y-4">
-              <h2 className="text-3xl font-mono font-bold text-cli-teal">Best Practice Recommendations</h2>
-              <p className="text-cli-yellow font-mono">Analyze requirements and get AI-powered recommendations for optimal workflows</p>
-            </div>
+            <Dialog open={isCreateReferenceModalOpen} onOpenChange={setIsCreateReferenceModalOpen}>
+              <DialogContent className="bg-cli-terminal border-cli-teal/30 text-cli-green max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle className="text-cli-teal font-mono">Add New Reference</DialogTitle>
+                    <DialogDescription className="text-cli-yellow font-mono">
+                      Create a new reference for your knowledge base
+                    </DialogDescription>
+                  </DialogHeader>
+                  <Form method="post" className="space-y-4">
+                    <input type="hidden" name="intent" value="create_reference" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="ref-name" className="text-cli-teal font-mono">Reference Name</Label>
+                        <Input
+                          id="ref-name"
+                          name="name"
+                          placeholder="Enter reference name"
+                          className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="ref-category" className="text-cli-teal font-mono">Category</Label>
+                        <Select name="category" required>
+                          <SelectTrigger className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono">
+                            <SelectValue placeholder="Select category" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-cli-terminal border-cli-teal/30">
+                            <SelectItem value="prompt_template" className="text-cli-green font-mono">Prompt Template</SelectItem>
+                            <SelectItem value="workflow_guide" className="text-cli-green font-mono">Workflow Guide</SelectItem>
+                            <SelectItem value="tool_documentation" className="text-cli-green font-mono">Tool Documentation</SelectItem>
+                            <SelectItem value="best_practice" className="text-cli-green font-mono">Best Practice</SelectItem>
+                            <SelectItem value="example" className="text-cli-green font-mono">Example</SelectItem>
+                            <SelectItem value="configuration" className="text-cli-green font-mono">Configuration</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ref-description" className="text-cli-teal font-mono">Description</Label>
+                      <Input
+                        id="ref-description"
+                        name="description"
+                        placeholder="Brief description of the reference"
+                        className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ref-content" className="text-cli-teal font-mono">Content</Label>
+                      <Textarea
+                        id="ref-content"
+                        name="content"
+                        placeholder="Enter the reference content..."
+                        className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono min-h-[120px]"
+                        required
+                      />
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={resetReferenceForm}
+                        className="border-cli-coral text-cli-coral hover:bg-cli-coral/10 font-mono"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono"
+                      >
+                        {isSubmitting ? 'Creating...' : 'Create Reference'}
+                      </Button>
+                    </DialogFooter>
+                  </Form>
+                </DialogContent>
+              </Dialog>
 
-            {/* Analysis Section */}
+            {/* References Library */}
             <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal">
               <CardHeader>
-                <CardTitle className="text-cli-teal font-mono flex items-center gap-2">
-                  {safeLucideIcon('Brain', 'h-5 w-5')}
-                  Requirements Analysis
-                </CardTitle>
-                <CardDescription className="text-cli-yellow font-mono">
-                  Describe your task requirements to get personalized best practice recommendations
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4">
+                <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-cli-yellow font-mono">Task Requirements</Label>
-                    <Textarea
-                      value={analysisRequirements}
-                      onChange={(e) => setAnalysisRequirements(e.target.value)}
-                      placeholder="Describe what you want to build. Be specific about inputs, outputs, and expected behavior..."
-                      rows={4}
-                      className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono focus:border-cli-coral resize-none"
-                    />
+                    <CardTitle className="text-cli-teal font-mono flex items-center gap-2">
+                      {safeLucideIcon('Library', 'h-5 w-5')}
+                      References Library
+                    </CardTitle>
+                    <CardDescription className="text-cli-yellow font-mono">
+                      Browse and search our curated collection of references
+                    </CardDescription>
                   </div>
-
-                  <div>
-                    <Label className="text-cli-yellow font-mono">Selected Tools (Optional)</Label>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-32 overflow-y-auto p-4 bg-cli-bg/30 rounded-lg border border-cli-teal/20">
-                      {tools.slice(0, 12).map((tool) => (
-                        <div key={tool.id} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`analysis-tool-${tool.id}`}
-                            checked={selectedTools.includes(tool.name)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setSelectedTools([...selectedTools, tool.name]);
-                              } else {
-                                setSelectedTools(selectedTools.filter(t => t !== tool.name));
-                              }
-                            }}
-                            className="border-cli-teal/50"
-                          />
-                          <Label
-                            htmlFor={`analysis-tool-${tool.id}`}
-                            className="text-cli-teal font-mono text-sm cursor-pointer"
-                          >
-                            {tool.name}
-                          </Label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <Button
-                    onClick={handleAnalyzeRequirements}
-                    disabled={!analysisRequirements.trim() || isSubmitting}
+                  <Button 
+                    onClick={() => setIsCreateReferenceModalOpen(true)}
                     className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono shadow-cli-glow"
                   >
-                    {isSubmitting ? (
-                      <>
-                        {safeLucideIcon('Loader2', 'mr-2 h-4 w-4 animate-spin')}
-                        Analyzing...
-                      </>
-                    ) : (
-                      <>
-                        {safeLucideIcon('Sparkles', 'mr-2 h-4 w-4')}
-                        Analyze Requirements
-                      </>
-                    )}
+                    {safeLucideIcon('Plus', 'mr-2 h-4 w-4')}
+                    Add Reference
                   </Button>
                 </div>
-
-                {/* Analysis Results */}
-                {analysisResult && (
-                  <div className="mt-6 p-6 bg-cli-bg/50 rounded-lg border border-cli-teal/20">
-                    <h4 className="font-mono font-semibold text-cli-teal mb-4 flex items-center gap-2">
-                      {safeLucideIcon('CheckCircle', 'h-5 w-5')}
-                      Analysis Results
-                    </h4>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                        <div>
-                          <p className="text-cli-yellow font-mono text-sm mb-2">Task Assessment</p>
-                          <div className="space-y-2">
-                            <div className="flex justify-between">
-                              <span className="text-cli-green font-mono text-sm">Complexity:</span>
-                              <Badge variant="outline" className={cn(
-                                "font-mono text-xs",
-                                analysisResult.taskComplexity === 'simple' ? "border-cli-green text-cli-green" :
-                                  analysisResult.taskComplexity === 'moderate' ? "border-cli-yellow text-cli-yellow" :
-                                    "border-cli-coral text-cli-coral"
-                              )}>
-                                {analysisResult.taskComplexity}
-                              </Badge>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-cli-green font-mono text-sm">Risk Level:</span>
-                              <Badge variant="outline" className={cn(
-                                "font-mono text-xs",
-                                analysisResult.riskLevel === 'low' ? "border-cli-green text-cli-green" :
-                                  analysisResult.riskLevel === 'medium' ? "border-cli-yellow text-cli-yellow" :
-                                    "border-cli-coral text-cli-coral"
-                              )}>
-                                {analysisResult.riskLevel}
-                              </Badge>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-cli-green font-mono text-sm">Time Estimate:</span>
-                              <span className="text-cli-teal font-mono text-sm">{analysisResult.timeEstimate}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div>
-                          <p className="text-cli-yellow font-mono text-sm mb-2">Required Skills</p>
-                          <div className="flex flex-wrap gap-2">
-                            {analysisResult.requiredSkills.map((skill, index) => (
-                              <Badge key={index} variant="outline" className="border-cli-teal text-cli-teal font-mono text-xs">
-                                {skill}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div>
-                          <p className="text-cli-yellow font-mono text-sm mb-2">Suggested Approach</p>
-                          <p className="text-cli-green font-mono text-sm bg-cli-terminal/50 p-3 rounded border border-cli-teal/20">
-                            {analysisResult.suggestedApproach}
-                          </p>
-                        </div>
-
-                        <div>
-                          <p className="text-cli-yellow font-mono text-sm mb-2">Confidence Score</p>
-                          <div className="flex items-center gap-2">
-                            <Progress value={analysisResult.confidence} className="flex-1" />
-                            <span className="text-cli-green font-mono text-sm">{analysisResult.confidence}%</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {analysisResult.potentialChallenges.length > 0 && (
-                      <div className="mt-4">
-                        <p className="text-cli-coral font-mono text-sm mb-2">Potential Challenges</p>
-                        <ul className="list-disc list-inside space-y-1">
-                          {analysisResult.potentialChallenges.map((challenge, index) => (
-                            <li key={index} className="text-cli-yellow font-mono text-sm">{challenge}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {analysisResult.customRecommendations.length > 0 && (
-                      <div className="mt-4">
-                        <p className="text-cli-teal font-mono text-sm mb-2">Custom Recommendations</p>
-                        <ul className="list-disc list-inside space-y-1">
-                          {analysisResult.customRecommendations.map((rec, index) => (
-                            <li key={index} className="text-cli-green font-mono text-sm">{rec}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Best Practices Library */}
-            <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal">
-              <CardHeader>
-                <CardTitle className="text-cli-teal font-mono flex items-center gap-2">
-                  {safeLucideIcon('Library', 'h-5 w-5')}
-                  Best Practices Library
-                </CardTitle>
-                <CardDescription className="text-cli-yellow font-mono">
-                  Browse and search our curated collection of best practices
-                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Search and Filters */}
@@ -1469,7 +1471,7 @@ export default function Index() {
                     <Input
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search best practices..."
+                      placeholder="Search references by name..."
                       className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono focus:border-cli-coral"
                     />
                   </div>
@@ -1479,89 +1481,98 @@ export default function Index() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Categories</SelectItem>
-                      <SelectItem value="Planning">Planning</SelectItem>
-                      <SelectItem value="Development">Development</SelectItem>
-                      <SelectItem value="Tool Selection">Tool Selection</SelectItem>
-                      <SelectItem value="Quality Assurance">Quality Assurance</SelectItem>
-                      <SelectItem value="Performance">Performance</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select value={selectedType} onValueChange={setSelectedType}>
-                    <SelectTrigger className="w-48 bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono">
-                      <SelectValue placeholder="Type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="workflow">Workflow</SelectItem>
-                      <SelectItem value="agent">Agent</SelectItem>
-                      <SelectItem value="tool_usage">Tool Usage</SelectItem>
+                      <SelectItem value="prompt_template">Prompt Template</SelectItem>
+                      <SelectItem value="workflow_guide">Workflow Guide</SelectItem>
+                      <SelectItem value="tool_documentation">Tool Documentation</SelectItem>
+                      <SelectItem value="best_practice">Best Practice</SelectItem>
+                      <SelectItem value="example">Example</SelectItem>
                       <SelectItem value="configuration">Configuration</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button
-                    onClick={handleBestPracticesSearch}
-                    className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono"
-                  >
-                    {safeLucideIcon('Search', 'h-4 w-4')}
-                  </Button>
                 </div>
 
-                {/* Best Practices Grid */}
+                {/* References Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {bestPractices.map((practice) => (
-                    <Card key={practice.id} className="bg-cli-bg/50 border-cli-teal/20 hover:border-cli-coral/50 transition-colors">
+                  {filteredReferences.length === 0 ? (
+                    <div className="col-span-full text-center py-12">
+                      <div className="text-cli-yellow font-mono text-lg mb-2">
+                        {searchQuery || selectedCategory !== "all" ? "No matching references found" : "No references available"}
+                      </div>
+                      <div className="text-cli-teal font-mono text-sm">
+                        {searchQuery || selectedCategory !== "all" ? "Try adjusting your search or filters" : "Create your first reference to get started"}
+                      </div>
+                    </div>
+                  ) : (
+                    filteredReferences.map((reference) => (
+                    <Card key={reference.id} className="bg-cli-bg/50 border-cli-teal/20 hover:border-cli-coral/50 transition-colors">
                       <CardHeader>
                         <div className="flex items-start justify-between">
-                          <CardTitle className="text-cli-teal font-mono text-lg">{practice.title}</CardTitle>
-                          <div className="flex flex-col gap-1">
-                            <Badge variant="outline" className="border-cli-coral text-cli-coral font-mono text-xs">
-                              {practice.type}
-                            </Badge>
+                          <CardTitle className="text-cli-teal font-mono text-lg flex items-center gap-2">
+                            {safeLucideIcon('FileText', 'h-5 w-5')}
+                            {reference.name}
+                          </CardTitle>
+                          <div className="flex items-center gap-2">
                             <Badge variant="outline" className={cn(
                               "font-mono text-xs",
-                              practice.difficulty === 'beginner' ? "border-cli-green text-cli-green" :
-                                practice.difficulty === 'intermediate' ? "border-cli-yellow text-cli-yellow" :
-                                  "border-cli-coral text-cli-coral"
+                              reference.isActive ? "border-cli-green text-cli-green" : "border-cli-coral text-cli-coral"
                             )}>
-                              {practice.difficulty}
+                              {reference.isActive ? 'Active' : 'Inactive'}
                             </Badge>
+                            <Switch
+                              checked={reference.isActive}
+                              onCheckedChange={() => handleToggleReference(reference)}
+                              className="data-[state=checked]:bg-cli-teal"
+                            />
                           </div>
                         </div>
                         <CardDescription className="text-cli-yellow font-mono text-sm">
-                          {practice.description}
+                          {reference.description}
                         </CardDescription>
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-3">
-                          <div className="flex items-center gap-2 text-xs font-mono text-cli-green">
-                            {safeLucideIcon('Clock', 'h-3 w-3')}
-                            <span>{practice.estimatedTime}</span>
-                          </div>
-
                           <div className="flex items-center gap-2 text-xs font-mono text-cli-coral">
                             {safeLucideIcon('Tag', 'h-3 w-3')}
-                            <span>{practice.category}</span>
+                            <span>{reference.category.replace('_', ' ')}</span>
                           </div>
-
-                          {practice.tags && practice.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {practice.tags.slice(0, 3).map((tag, index) => (
-                                <Badge key={index} variant="outline" className="border-cli-yellow/50 text-cli-yellow font-mono text-xs">
-                                  {tag}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
 
                           <div className="pt-2 border-t border-cli-teal/20">
                             <p className="text-cli-green font-mono text-xs line-clamp-3">
-                              {practice.content.substring(0, 120)}...
+                              {reference.content.substring(0, 120)}...
                             </p>
+                          </div>
+
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-cli-yellow font-mono text-xs">
+                              Created: {new Date(reference.createdAt).toLocaleDateString()}
+                            </span>
                           </div>
                         </div>
                       </CardContent>
+                      <CardFooter>
+                        <div className="flex gap-2 w-full">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditReference(reference)}
+                            className="flex-1 border-cli-teal text-cli-teal hover:bg-cli-teal/10 font-mono"
+                          >
+                            {safeLucideIcon('Edit', 'mr-1 h-3 w-3')}
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteReference(reference)}
+                            className="border-cli-coral text-cli-coral hover:bg-cli-coral/10 font-mono"
+                          >
+                            {safeLucideIcon('Trash2', 'h-3 w-3')}
+                          </Button>
+                        </div>
+                      </CardFooter>
                     </Card>
-                  ))}
+                  ))
+                )}
                 </div>
               </CardContent>
             </Card>
@@ -2059,7 +2070,7 @@ export default function Index() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {tools.map((tool) => (
+              {allTools.map((tool) => (
                 <Card key={tool.id} className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal hover:shadow-cli-glow transition-all duration-300">
                   <CardHeader>
                     <div className="flex items-center justify-between">
@@ -2140,7 +2151,7 @@ export default function Index() {
               ))}
             </div>
 
-            {tools.length === 0 && (
+            {allTools.length === 0 && (
               <Card className="bg-cli-terminal/50 border-cli-teal/30 shadow-terminal">
                 <CardContent className="text-center py-12">
                   <div className="space-y-4">
@@ -2239,35 +2250,7 @@ export default function Index() {
                 </CardContent>
               </Card>
 
-              {/* Best Practices */}
-              <Card className="bg-cli-terminal/50 border-cli-yellow/30 shadow-terminal">
-                <CardHeader>
-                  <CardTitle className="text-cli-yellow font-mono flex items-center gap-2">
-                    {safeLucideIcon('Lightbulb', 'h-5 w-5')}
-                    Best Practices
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-start gap-2">
-                      <div className="w-2 h-2 bg-cli-yellow rounded-full mt-2"></div>
-                      <p className="text-sm text-cli-yellow font-mono">Start with the builder for step-by-step help</p>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <div className="w-2 h-2 bg-cli-yellow rounded-full mt-2"></div>
-                      <p className="text-sm text-cli-yellow font-mono">Be specific about input/output formats</p>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <div className="w-2 h-2 bg-cli-yellow rounded-full mt-2"></div>
-                      <p className="text-sm text-cli-yellow font-mono">Use validation to improve quality</p>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <div className="w-2 h-2 bg-cli-yellow rounded-full mt-2"></div>
-                      <p className="text-sm text-cli-yellow font-mono">Test configurations before deployment</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+
             </div>
           </div>
         )}
@@ -2324,7 +2307,7 @@ export default function Index() {
           
           <toolFetcher.Form method="post" className="space-y-4">
             <input type="hidden" name="intent" value="update_tool" />
-            <input type="hidden" name="toolId" value={editingTool?.id || ''} />
+            <input type="hidden" name="id" value={editingTool?.id || ''} />
             
             <div className="space-y-2">
               <Label htmlFor="edit-tool-name" className="text-cli-yellow font-mono">Tool Name</Label>
@@ -2451,6 +2434,126 @@ export default function Index() {
               className="bg-cli-coral hover:bg-cli-coral/80 text-white font-mono"
             >
               Delete Tool
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Reference Dialog */}
+      <Dialog open={isEditReferenceModalOpen} onOpenChange={setIsEditReferenceModalOpen}>
+        <DialogContent className="bg-cli-terminal border-cli-teal/30 text-cli-green max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-cli-teal font-mono">Edit Reference</DialogTitle>
+            <DialogDescription className="text-cli-yellow font-mono">
+              Update the reference information
+            </DialogDescription>
+          </DialogHeader>
+          
+          <referenceFetcher.Form method="post" className="space-y-4">
+            <input type="hidden" name="intent" value="update_reference" />
+            <input type="hidden" name="id" value={editingReference?.id || ''} />
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-ref-name" className="text-cli-teal font-mono">Reference Name</Label>
+                <Input
+                  id="edit-ref-name"
+                  name="name"
+                  defaultValue={editingReference?.name || ''}
+                  placeholder="Enter reference name"
+                  className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-ref-category" className="text-cli-teal font-mono">Category</Label>
+                <Select name="category" defaultValue={editingReference?.category || ''} required>
+                  <SelectTrigger className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-cli-terminal border-cli-teal/30">
+                    <SelectItem value="prompt_template" className="text-cli-green font-mono">Prompt Template</SelectItem>
+                    <SelectItem value="workflow_guide" className="text-cli-green font-mono">Workflow Guide</SelectItem>
+                    <SelectItem value="tool_documentation" className="text-cli-green font-mono">Tool Documentation</SelectItem>
+                    <SelectItem value="best_practice" className="text-cli-green font-mono">Best Practice</SelectItem>
+                    <SelectItem value="example" className="text-cli-green font-mono">Example</SelectItem>
+                    <SelectItem value="configuration" className="text-cli-green font-mono">Configuration</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="edit-ref-description" className="text-cli-teal font-mono">Description</Label>
+              <Input
+                id="edit-ref-description"
+                name="description"
+                defaultValue={editingReference?.description || ''}
+                placeholder="Brief description of the reference"
+                className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono"
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="edit-ref-content" className="text-cli-teal font-mono">Content</Label>
+              <Textarea
+                id="edit-ref-content"
+                name="content"
+                defaultValue={editingReference?.content || ''}
+                placeholder="Enter the reference content..."
+                className="bg-cli-bg border-cli-teal/30 text-cli-green font-mono min-h-[120px]"
+                required
+              />
+            </div>
+            
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsEditReferenceModalOpen(false);
+                  resetEditReferenceForm();
+                }}
+                className="border-cli-coral text-cli-coral hover:bg-cli-coral/10 font-mono"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="bg-cli-teal hover:bg-cli-teal/80 text-white font-mono"
+              >
+                Update Reference
+              </Button>
+            </DialogFooter>
+          </referenceFetcher.Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Reference Confirmation Dialog */}
+      <Dialog open={isDeleteReferenceConfirmOpen} onOpenChange={setIsDeleteReferenceConfirmOpen}>
+        <DialogContent className="bg-cli-terminal border-cli-coral/30 text-cli-green">
+          <DialogHeader>
+            <DialogTitle className="text-cli-coral font-mono">Delete Reference</DialogTitle>
+            <DialogDescription className="text-cli-yellow font-mono">
+              Are you sure you want to delete "{referenceToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsDeleteReferenceConfirmOpen(false)}
+              className="border-cli-teal text-cli-teal hover:bg-cli-teal/10 font-mono"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmDeleteReference}
+              className="bg-cli-coral hover:bg-cli-coral/80 text-white font-mono"
+            >
+              Delete Reference
             </Button>
           </DialogFooter>
         </DialogContent>

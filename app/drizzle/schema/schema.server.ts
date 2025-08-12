@@ -79,6 +79,9 @@ export * from "./user-sessions.schema.server";
 // Export best practices schemas
 export * from "./best-practices.schema.server";
 
+// Export refs schemas
+export * from "./refs.schema.server";
+
 // Validation schemas
 export const insertAgentSchema = createInsertSchema(agentsTable).omit({
   id: true,

@@ -187,10 +187,11 @@ export const createAction = async ({ request }: ActionFunctionArgs) => {
         const selectedReferences = JSON.parse(formData.get("selectedReferences") as string || "[]");
         const toolUsageInstructions = JSON.parse(formData.get("toolUsageInstructions") as string || "{}");
         const type = intent === "generate_agent" ? "agent" : "workflow";
+        const previewMode = formData.get("previewMode") === "true";
 
-        if (!name || !description || !taskRequirements) {
+        if (!taskRequirements) {
           return json({
-            error: "Missing required fields: name, description, and task requirements are required",
+            error: "Task requirements are required",
             success: false
           }, { status: 400 });
         }
@@ -207,8 +208,8 @@ export const createAction = async ({ request }: ActionFunctionArgs) => {
           references: selectedReferences,
           toolUsageInstructions,
           additionalContext: description,
-          allAvailableTools: allTools.map(t => ({ name: t.name, description: t.description })),
-          allAvailableReferences: allReferences.map(r => ({ name: r.name, description: r.description, category: r.category }))
+          allAvailableTools: allTools.map(t => ({ ...t, id: t.id })),
+          allAvailableReferences: allReferences.map(r => ({ ...r, id: r.id }))
         };
 
         const aiResponse = type === "agent"
@@ -235,25 +236,77 @@ export const createAction = async ({ request }: ActionFunctionArgs) => {
           });
         }
 
+        // In preview mode, don't save to database
+        if (previewMode) {
+          return json({
+            success: true,
+            message: "Generated successfully",
+            aiResponse,
+            showPreview: true,
+            name,
+            description,
+            type,
+            taskRequirements
+          });
+        }
+
+        // Only save if name and description are provided
+        if (!name || !description) {
+          return json({
+            error: "Name and description are required for saving",
+            success: false
+          }, { status: 400 });
+        }
+
         // Create agent in database
         const newAgent = await agentsStorage.createAgent({
           name,
           description,
           type,
           taskRequirements,
-          generatedPrompt: aiResponse.prompt,
+          generatedPrompt: aiResponse.result,
           configuration: aiResponse.configuration,
           status: "draft"
         });
 
         return json({
           success: true,
-          message: `${type.charAt(0).toUpperCase() + type.slice(1)} generated successfully`,
+          message: `${type.charAt(0).toUpperCase() + type.slice(1)} saved successfully`,
           agent: newAgent,
           aiResponse,
-          completenessScore: aiResponse.completenessScore,
-          selectedTools: aiResponse.selectedTools,
-          selectedReferences: aiResponse.selectedReferences,
+          showCelebration: true
+        });
+      }
+
+      case "save_generated_agent": {
+        const name = formData.get("name") as string;
+        const description = formData.get("description") as string;
+        const taskRequirements = formData.get("taskRequirements") as string;
+        const type = formData.get("type") as string;
+        const generatedPrompt = formData.get("generatedPrompt") as string;
+        const configuration = JSON.parse(formData.get("configuration") as string || "{}");
+
+        if (!name || !description || !taskRequirements || !generatedPrompt) {
+          return json({
+            error: "All fields are required for saving",
+            success: false
+          }, { status: 400 });
+        }
+
+        const newAgent = await agentsStorage.createAgent({
+          name,
+          description,
+          type: type as "agent" | "workflow",
+          taskRequirements,
+          generatedPrompt,
+          configuration,
+          status: "draft"
+        });
+
+        return json({
+          success: true,
+          message: `${type.charAt(0).toUpperCase() + type.slice(1)} saved successfully`,
+          agent: newAgent,
           showCelebration: true
         });
       }

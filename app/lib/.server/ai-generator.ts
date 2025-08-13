@@ -57,7 +57,9 @@ export interface AgentGenerationRequest {
 }
 
 export interface AgentGenerationResponse {
-  prompt: string;
+  result: string; // The generated prompt with reference and tool IDs
+  reason: string; // Explanation of the workflow design and tool/reference usage
+  recommendations: string[]; // Suggestions for improvements and missing tools/references
   configuration: {
     tools: string[];
     references: string[];
@@ -68,13 +70,13 @@ export interface AgentGenerationResponse {
       tools: string[];
     }>;
     best_practices?: string[];
-    recommendations?: string[];
   };
-  selectedTools: Array<{name: string; description: string; reason: string}>;
-  selectedReferences: Array<{name: string; description: string; category: string; reason: string}>;
+  selectedTools: Array<{name: string; description: string; reason: string; id?: number}>;
+  selectedReferences: Array<{name: string; description: string; category: string; reason: string; id?: number}>;
+  missingTools: Array<{name: string; description: string; usage?: string}>;
+  missingReferences: Array<{name: string; description: string; category: string; content?: string}>;
   completenessScore: number;
   missingInfo?: string[];
-  suggestions?: string[];
 }
 
 export class AIGenerator {
@@ -228,57 +230,158 @@ Be selective and choose only the most relevant tools and references.
   }
 
   private buildAgentPrompt(request: AgentGenerationRequest): string {
+    const availableToolsInfo = request.allAvailableTools?.map(t => `- ${t.name} (id: ${this.getToolId(t.name, request)}): ${t.description}`).join('\n') || '';
+    const availableReferencesInfo = request.allAvailableReferences?.map(r => `- ${r.name} (id: ${this.getReferenceId(r.name, request)}): ${r.description} [${r.category}]`).join('\n') || '';
+    
     return `
 You are an expert AI agent configuration specialist. Generate a comprehensive agent configuration based on the following requirements:
 
-Task Requirements: ${request.taskRequirements}
-Selected Tools: ${request.tools.join(", ")}
-Selected References: ${request.references.join(", ")}
-Additional Context: ${request.additionalContext || "None"}
+## Input Information:
+**需求名称**: ${this.extractRequirementName(request.taskRequirements)}
+**需求描述**: ${request.additionalContext || "请根据任务需求自行判断"}
+**详细内容**: ${request.taskRequirements}
 
-Please generate:
-1. A detailed prompt for the agent that clearly defines its role, responsibilities, and capabilities
-2. Configuration parameters for optimal performance
-3. Tool usage recommendations
-4. Best practices for this type of task
+**可用Tools**:
+${availableToolsInfo}
 
-Respond with a JSON object containing:
-- prompt: string (the agent prompt)
-- configuration: object with tools, references, parameters, best_practices, recommendations
-- suggestions: array of optimization suggestions
+**可用References**:
+${availableReferencesInfo}
 
-Focus on creating a flexible, capable agent that can handle variations of the specified task.
+## Output Requirements:
+Please respond with a JSON object containing exactly these three fields:
+
+1. **result**: Generate a detailed prompt for the agent. The prompt should:
+   - Define the agent's role, responsibilities, and capabilities clearly
+   - Reference tools using format: [{tool_name}](toolid_{id})
+   - Reference documents using format: [{ref_name}](refid_{id})
+   - For missing tools/references not in the available list, use id=0: [{missing_name}](toolid_0) or [{missing_name}](refid_0)
+   - Follow a structured workflow with clear phases and steps
+   - Include specific instructions for using tools and references
+
+2. **reason**: Explain your design decisions including:
+   - Why you chose this particular workflow structure
+   - Reasoning for each selected tool and reference
+   - How the tools and references work together
+   - Why certain phases are ordered this way
+
+3. **recommendations**: Array of suggestions including:
+   - Improvements for existing tools (usage instructions, default values)
+   - Missing tools or references that would enhance the workflow (with descriptions)
+   - Best practices that should be documented
+   - Any gaps in the current tool/reference set
+
+## Example Format for result field:
+Generate content similar to this structure but adapted to your specific requirements:
+
+\`\`\`markdown
+你是一个[角色定义]，擅长[核心能力]。
+
+## 1. [阶段名称]
+本阶段的目的：[阶段目标]
+
+在开始本阶段工作前，请再次确认并充分理解 [{reference_name}](refid_{id}) 中的指导原则。
+使用 [{tool_name}](toolid_{id}) 工具来[具体用途]。
+
+[具体步骤和指导...]
+
+## 2. [下一阶段]
+[继续其他阶段...]
+\`\`\`
+
+Focus on creating a practical, step-by-step agent that can handle the specified task effectively.
 `;
   }
 
   private buildWorkflowPrompt(request: AgentGenerationRequest): string {
+    const availableToolsInfo = request.allAvailableTools?.map(t => `- ${t.name} (id: ${this.getToolId(t.name, request)}): ${t.description}`).join('\n') || '';
+    const availableReferencesInfo = request.allAvailableReferences?.map(r => `- ${r.name} (id: ${this.getReferenceId(r.name, request)}): ${r.description} [${r.category}]`).join('\n') || '';
+    
     return `
 You are an expert workflow design specialist. Create a structured agentic workflow based on the following requirements:
 
-Task Requirements: ${request.taskRequirements}
-Selected Tools: ${request.tools.join(", ")}
-Selected References: ${request.references.join(", ")}
-Additional Context: ${request.additionalContext || "None"}
+## Input Information:
+**需求名称**: ${this.extractRequirementName(request.taskRequirements)}
+**需求描述**: ${request.additionalContext || "请根据任务需求自行判断"}
+**详细内容**: ${request.taskRequirements}
 
-Please generate:
-1. A step-by-step workflow with clear descriptions
-2. Tool assignments for each step
-3. Dependencies and flow control
-4. Error handling and best practices
+**可用Tools**:
+${availableToolsInfo}
 
-Respond with a JSON object containing:
-- prompt: string (workflow description)
-- configuration: object with workflow_steps, tools, references, parameters, best_practices
-- suggestions: array of workflow optimization suggestions
+**可用References**:
+${availableReferencesInfo}
 
-Each workflow step should include:
-- step: step name
-- description: what happens in this step
-- tools: tools used in this step
-- dependencies: previous steps required
+## Output Requirements:
+Please respond with a JSON object containing exactly these three fields:
 
-Focus on creating a reliable, repeatable process.
+1. **result**: Generate a detailed workflow prompt. The workflow should:
+   - Define clear phases and steps with specific objectives
+   - Reference tools using format: [{tool_name}](toolid_{id})
+   - Reference documents using format: [{ref_name}](refid_{id})
+   - For missing tools/references not in the available list, use id=0: [{missing_name}](toolid_0) or [{missing_name}](refid_0)
+   - Include dependencies between steps
+   - Specify error handling and validation points
+   - Provide clear success criteria for each phase
+
+2. **reason**: Explain your workflow design including:
+   - Why you structured the workflow in this particular order
+   - Reasoning for each selected tool and reference
+   - How different phases connect and depend on each other
+   - Risk mitigation strategies built into the workflow
+
+3. **recommendations**: Array of suggestions including:
+   - Improvements for existing tools (usage patterns, configurations)
+   - Missing tools or references that would enhance the workflow
+   - Additional validation steps or checkpoints
+   - Alternative workflow approaches to consider
+
+## Example Format for result field:
+Generate content similar to this structure but adapted to your specific workflow requirements:
+
+\`\`\`markdown
+你是一个[工作流角色]，负责[主要职责]。
+
+## 工作流概述
+本工作流包含[X]个主要阶段，旨在[工作流目标]。
+
+## 阶段1: [阶段名称]
+**目标**: [阶段目标]
+**前置条件**: [前置要求]
+
+参考 [{reference_name}](refid_{id}) 中的指导原则。
+使用 [{tool_name}](toolid_{id}) 工具进行[具体操作]。
+
+**步骤**:
+1. [具体步骤]
+2. [验证点]
+
+**成功标准**: [如何判断此阶段完成]
+
+## 阶段2: [下一阶段]
+[继续其他阶段...]
+
+## 错误处理
+- [错误情况1]: [处理方式]
+- [错误情况2]: [处理方式]
+\`\`\`
+
+Focus on creating a practical, step-by-step workflow that can be reliably executed.
 `;
+  }
+
+  private getToolId(toolName: string, request: AgentGenerationRequest): string {
+    const tool = request.allAvailableTools?.find(t => t.name === toolName);
+    return tool ? (tool as any).id?.toString() || "auto" : "0";
+  }
+
+  private getReferenceId(refName: string, request: AgentGenerationRequest): string {
+    const ref = request.allAvailableReferences?.find(r => r.name === refName);
+    return ref ? (ref as any).id?.toString() || "auto" : "0";
+  }
+
+  private extractRequirementName(taskRequirements: string): string {
+    // Extract the first line or first sentence as requirement name
+    const firstLine = taskRequirements.split('\n')[0];
+    return firstLine.length > 50 ? firstLine.substring(0, 50) + "..." : firstLine;
   }
 
   private parseSelectionResponse(response: string, request: AgentGenerationRequest): {
@@ -336,73 +439,109 @@ Focus on creating a reliable, repeatable process.
   private parseAgentResponse(response: string, request: AgentGenerationRequest): AgentGenerationResponse {
     try {
       const parsed = JSON.parse(response);
+      
+      // Extract missing tools and references from the result
+      const missingTools = this.extractMissingItems(parsed.result || "", "toolid_0", "tool");
+      const missingReferences = this.extractMissingItems(parsed.result || "", "refid_0", "reference");
+      
       return {
-        prompt: parsed.prompt || "Generated agent prompt",
+        result: parsed.result || "Failed to generate prompt content",
+        reason: parsed.reason || "No reasoning provided",
+        recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [parsed.recommendations || "No recommendations provided"],
         configuration: {
           tools: request.tools,
           references: request.references,
           parameters: parsed.configuration?.parameters || {},
-          best_practices: parsed.configuration?.best_practices || [],
-          recommendations: parsed.recommendations || []
+          best_practices: parsed.configuration?.best_practices || []
         },
         selectedTools: [],
         selectedReferences: [],
-        completenessScore: 80,
-        suggestions: parsed.suggestions || []
+        missingTools,
+        missingReferences,
+        completenessScore: 80
       };
     } catch (error) {
       console.error("Error parsing agent response:", error);
       return {
-        prompt: "Failed to generate agent prompt. Please try again.",
+        result: "Failed to generate agent prompt. Please try again.",
+        reason: "Error occurred during generation",
+        recommendations: ["Please review your task requirements and try again"],
         configuration: {
           tools: request.tools,
           references: request.references,
           parameters: {},
-          best_practices: [],
-          recommendations: []
+          best_practices: []
         },
         selectedTools: [],
         selectedReferences: [],
-        completenessScore: 0,
-        suggestions: ["Please review your task requirements and try again"]
+        missingTools: [],
+        missingReferences: [],
+        completenessScore: 0
       };
     }
+  }
+
+  private extractMissingItems(content: string, idPattern: string, type: "tool" | "reference"): Array<{name: string; description: string; usage?: string; category?: string; content?: string}> {
+    const regex = type === "tool" 
+      ? /\[([^\]]+)\]\(toolid_0\)/g 
+      : /\[([^\]]+)\]\(refid_0\)/g;
+    
+    const matches = [...content.matchAll(regex)];
+    const uniqueNames = [...new Set(matches.map(match => match[1]))];
+    
+    return uniqueNames.map(name => ({
+      name,
+      description: `${type === "tool" ? "工具" : "参考文档"}: ${name}`,
+      ...(type === "tool" ? { usage: "请提供使用说明" } : { 
+        category: "best-practice", 
+        content: "请提供文档内容" 
+      })
+    }));
   }
 
   private parseWorkflowResponse(response: string, request: AgentGenerationRequest): AgentGenerationResponse {
     try {
       const parsed = JSON.parse(response);
+      
+      // Extract missing tools and references from the result
+      const missingTools = this.extractMissingItems(parsed.result || "", "toolid_0", "tool");
+      const missingReferences = this.extractMissingItems(parsed.result || "", "refid_0", "reference");
+      
       return {
-        prompt: parsed.prompt || "Generated workflow description",
+        result: parsed.result || "Failed to generate workflow content",
+        reason: parsed.reason || "No reasoning provided",
+        recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [parsed.recommendations || "No recommendations provided"],
         configuration: {
           tools: request.tools,
           references: request.references,
           parameters: parsed.configuration?.parameters || {},
           workflow_steps: parsed.configuration?.workflow_steps || [],
-          best_practices: parsed.configuration?.best_practices || [],
-          recommendations: parsed.recommendations || []
+          best_practices: parsed.configuration?.best_practices || []
         },
         selectedTools: [],
         selectedReferences: [],
-        completenessScore: 80,
-        suggestions: parsed.suggestions || []
+        missingTools,
+        missingReferences,
+        completenessScore: 80
       };
     } catch (error) {
       console.error("Error parsing workflow response:", error);
       return {
-        prompt: "Failed to generate workflow. Please try again.",
+        result: "Failed to generate workflow. Please try again.",
+        reason: "Error occurred during generation",
+        recommendations: ["Please review your task requirements and try again"],
         configuration: {
           tools: request.tools,
           references: request.references,
           parameters: {},
           workflow_steps: [],
-          best_practices: [],
-          recommendations: []
+          best_practices: []
         },
         selectedTools: [],
         selectedReferences: [],
-        completenessScore: 0,
-        suggestions: ["Please review your task requirements and try again"]
+        missingTools: [],
+        missingReferences: [],
+        completenessScore: 0
       };
     }
   }

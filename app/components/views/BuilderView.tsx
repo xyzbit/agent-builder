@@ -384,24 +384,39 @@ export function BuilderView({
             </div>
 
 
-            <div className="flex justify-center pt-6">
+            <div className="flex justify-center gap-4 pt-6">
               <Button
                 type="submit"
+                name="previewMode"
+                value="true"
                 disabled={isSubmitting}
-                className="w-full max-w-md bg-gradient-to-r from-cli-teal to-cli-coral hover:from-cli-teal/80 hover:to-cli-coral/80 text-white font-mono shadow-cli-glow text-lg py-3"
+                className="max-w-md bg-gradient-to-r from-cli-yellow to-cli-teal hover:from-cli-yellow/80 hover:to-cli-teal/80 text-white font-mono shadow-cli-glow text-lg py-3"
               >
                 {isSubmitting ? (
                   <>
                     {safeLucideIcon('Loader2', 'mr-2 h-5 w-5 animate-spin')}
-                    AI is analyzing and generating...
+                    AI is generating...
                   </>
                 ) : (
                   <>
-                    {safeLucideIcon('Sparkles', 'mr-2 h-5 w-5')}
-                    AI Generate {generationType.charAt(0).toUpperCase() + generationType.slice(1)}
+                    {safeLucideIcon('Eye', 'mr-2 h-5 w-5')}
+                    Preview Generate
                   </>
                 )}
               </Button>
+              
+              {actionData?.showPreview && (
+                <Button
+                  type="submit"
+                  name="previewMode"
+                  value="false"
+                  disabled={isSubmitting}
+                  className="max-w-md bg-gradient-to-r from-cli-teal to-cli-coral hover:from-cli-teal/80 hover:to-cli-coral/80 text-white font-mono shadow-cli-glow text-lg py-3"
+                >
+                  {safeLucideIcon('Save', 'mr-2 h-5 w-5')}
+                  Save {generationType.charAt(0).toUpperCase() + generationType.slice(1)}
+                </Button>
+              )}
             </div>
           </Form>
 
@@ -471,6 +486,153 @@ export function BuilderView({
             </div>
           )}
           
+          {/* Preview Generation Results */}
+          {actionData && actionData.showPreview && actionData.aiResponse && (
+            <div className="mt-6 space-y-6">
+              <div className="bg-cli-terminal/50 p-6 rounded-lg border border-cli-teal/30">
+                <div className="flex items-center gap-2 mb-4">
+                  {safeLucideIcon('Eye', 'h-5 w-5 text-cli-teal')}
+                  <h4 className="font-mono font-bold text-cli-teal text-lg">Generation Preview</h4>
+                </div>
+                
+                {/* Generated Result */}
+                <div className="mb-6">
+                  <h5 className="font-mono text-cli-yellow text-sm mb-2">Generated Prompt:</h5>
+                  <div className="bg-cli-bg/50 p-4 rounded border border-cli-teal/20 max-h-96 overflow-y-auto">
+                    <pre className="text-cli-teal font-mono text-sm whitespace-pre-wrap">{actionData.aiResponse.result}</pre>
+                  </div>
+                </div>
+                
+                {/* Reasoning */}
+                <div className="mb-6">
+                  <h5 className="font-mono text-cli-yellow text-sm mb-2">Design Reasoning:</h5>
+                  <div className="bg-cli-bg/50 p-4 rounded border border-cli-teal/20">
+                    <p className="text-cli-teal font-mono text-sm whitespace-pre-wrap">{actionData.aiResponse.reason}</p>
+                  </div>
+                </div>
+                
+                {/* Recommendations */}
+                <div className="mb-6">
+                  <h5 className="font-mono text-cli-yellow text-sm mb-2">Recommendations:</h5>
+                  <div className="bg-cli-bg/50 p-4 rounded border border-cli-teal/20">
+                    <ul className="space-y-2">
+                      {actionData.aiResponse.recommendations?.map((rec: string, index: number) => (
+                        <li key={index} className="text-cli-teal font-mono text-sm flex items-start gap-2">
+                          <span className="text-cli-coral">•</span>
+                          <span>{rec}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+                
+                {/* Missing Tools and References */}
+                {(actionData.aiResponse.missingTools?.length > 0 || actionData.aiResponse.missingReferences?.length > 0) && (
+                  <div className="mb-6">
+                    <h5 className="font-mono text-cli-coral text-sm mb-3">Missing Items (Need to Create):</h5>
+                    
+                    {actionData.aiResponse.missingTools?.length > 0 && (
+                      <div className="mb-4">
+                        <p className="font-mono text-cli-yellow text-xs mb-2">Missing Tools:</p>
+                        <div className="grid gap-2">
+                          {actionData.aiResponse.missingTools.map((tool: any, index: number) => (
+                            <div key={index} className="flex items-center justify-between bg-cli-terminal/30 p-3 rounded border border-cli-coral/20">
+                              <div>
+                                <span className="font-mono text-cli-coral text-sm font-semibold">{tool.name}</span>
+                                <p className="font-mono text-cli-yellow text-xs">{tool.description}</p>
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="bg-cli-coral/20 border-cli-coral text-cli-coral hover:bg-cli-coral/30 font-mono text-xs"
+                                onClick={() => {
+                                  // TODO: Open tool creation modal with pre-filled data
+                                  console.log('Create tool:', tool);
+                                }}
+                              >
+                                Quick Create
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {actionData.aiResponse.missingReferences?.length > 0 && (
+                      <div>
+                        <p className="font-mono text-cli-yellow text-xs mb-2">Missing References:</p>
+                        <div className="grid gap-2">
+                          {actionData.aiResponse.missingReferences.map((ref: any, index: number) => (
+                            <div key={index} className="flex items-center justify-between bg-cli-terminal/30 p-3 rounded border border-cli-coral/20">
+                              <div>
+                                <span className="font-mono text-cli-coral text-sm font-semibold">{ref.name}</span>
+                                <p className="font-mono text-cli-yellow text-xs">{ref.description}</p>
+                                <span className="inline-block px-2 py-0.5 text-xs bg-cli-bg/50 text-cli-coral rounded mt-1">{ref.category}</span>
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="bg-cli-coral/20 border-cli-coral text-cli-coral hover:bg-cli-coral/30 font-mono text-xs"
+                                onClick={() => {
+                                  // TODO: Open reference creation modal with pre-filled data
+                                  console.log('Create reference:', ref);
+                                }}
+                              >
+                                Quick Create
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Save Form */}
+                <Form method="post" className="mt-6">
+                  <input type="hidden" name="intent" value="save_generated_agent" />
+                  <input type="hidden" name="type" value={actionData.type} />
+                  <input type="hidden" name="taskRequirements" value={actionData.taskRequirements} />
+                  <input type="hidden" name="generatedPrompt" value={actionData.aiResponse.result} />
+                  <input type="hidden" name="configuration" value={JSON.stringify(actionData.aiResponse.configuration)} />
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <Label className="text-cli-yellow font-mono text-sm">Name *</Label>
+                      <Input
+                        name="name"
+                        defaultValue={actionData.name || ""}
+                        placeholder="Enter a name for this agent/workflow"
+                        className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono focus:border-cli-coral"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-cli-yellow font-mono text-sm">Description *</Label>
+                      <Input
+                        name="description"
+                        defaultValue={actionData.description || ""}
+                        placeholder="Brief description"
+                        className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono focus:border-cli-coral"
+                        required
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-center">
+                    <Button
+                      type="submit"
+                      className="bg-gradient-to-r from-cli-teal to-cli-coral hover:from-cli-teal/80 hover:to-cli-coral/80 text-white font-mono shadow-cli-glow"
+                    >
+                      {safeLucideIcon('Save', 'mr-2 h-4 w-4')}
+                      Save {actionData.type?.charAt(0).toUpperCase() + actionData.type?.slice(1)}
+                    </Button>
+                  </div>
+                </Form>
+              </div>
+            </div>
+          )}
+
           {actionData && actionData.showCelebration && (
             <div className="mt-6 p-6 bg-gradient-to-r from-cli-teal/20 to-cli-coral/20 rounded-lg border border-cli-green/50">
               <div className="text-center">
@@ -478,37 +640,8 @@ export function BuilderView({
                   {safeLucideIcon('Sparkles', 'h-12 w-12 text-cli-green mx-auto')}
                 </div>
                 <h4 className="font-mono font-bold text-cli-green text-xl mb-2">
-                  🎉 {generationType.charAt(0).toUpperCase() + generationType.slice(1)} Generated Successfully!
+                  🎉 {generationType.charAt(0).toUpperCase() + generationType.slice(1)} Saved Successfully!
                 </h4>
-                <p className="font-mono text-cli-teal text-sm mb-4">
-                  Completeness Score: <span className="font-bold text-cli-green">{actionData.completenessScore}/100</span>
-                </p>
-                
-                {actionData.selectedTools && actionData.selectedTools.length > 0 && (
-                  <div className="mb-3">
-                    <p className="font-mono text-cli-yellow text-sm mb-2">Tools Used:</p>
-                    <div className="flex flex-wrap gap-2 justify-center">
-                      {actionData.selectedTools.map((tool: any, index: number) => (
-                        <span key={index} className="px-3 py-1 bg-cli-teal/20 text-cli-teal font-mono text-sm rounded-full border border-cli-teal/30">
-                          {tool.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {actionData.selectedReferences && actionData.selectedReferences.length > 0 && (
-                  <div>
-                    <p className="font-mono text-cli-yellow text-sm mb-2">References Used:</p>
-                    <div className="flex flex-wrap gap-2 justify-center">
-                      {actionData.selectedReferences.map((ref: any, index: number) => (
-                        <span key={index} className="px-3 py-1 bg-cli-coral/20 text-cli-coral font-mono text-sm rounded-full border border-cli-coral/30">
-                          {ref.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           )}

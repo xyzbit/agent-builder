@@ -546,8 +546,38 @@ export function BuilderView({
                                 size="sm"
                                 className="bg-cli-coral/20 border-cli-coral text-cli-coral hover:bg-cli-coral/30 font-mono text-xs"
                                 onClick={() => {
-                                  // TODO: Open tool creation modal with pre-filled data
-                                  console.log('Create tool:', tool);
+                                  // Open tool creation with pre-filled data
+                                  const toolData = {
+                                    name: tool.name,
+                                    description: tool.description,
+                                    usage: tool.usage || "请提供使用说明",
+                                    category: "development", // default category
+                                    toolType: "cli" as const // default type
+                                  };
+                                  
+                                  // Create a form and submit it to open the tool creation modal
+                                  const form = document.createElement('form');
+                                  form.method = 'post';
+                                  form.style.display = 'none';
+                                  
+                                  // Add form data
+                                  Object.entries(toolData).forEach(([key, value]) => {
+                                    const input = document.createElement('input');
+                                    input.type = 'hidden';
+                                    input.name = key;
+                                    input.value = value;
+                                    form.appendChild(input);
+                                  });
+                                  
+                                  // Add intent
+                                  const intentInput = document.createElement('input');
+                                  intentInput.type = 'hidden';
+                                  intentInput.name = 'intent';
+                                  intentInput.value = 'prefill_tool_creation';
+                                  form.appendChild(intentInput);
+                                  
+                                  document.body.appendChild(form);
+                                  form.submit();
                                 }}
                               >
                                 Quick Create
@@ -574,8 +604,37 @@ export function BuilderView({
                                 size="sm"
                                 className="bg-cli-coral/20 border-cli-coral text-cli-coral hover:bg-cli-coral/30 font-mono text-xs"
                                 onClick={() => {
-                                  // TODO: Open reference creation modal with pre-filled data
-                                  console.log('Create reference:', ref);
+                                  // Open reference creation with pre-filled data
+                                  const refData = {
+                                    name: ref.name,
+                                    description: ref.description,
+                                    category: ref.category || "best-practice",
+                                    content: ref.content || "请提供具体的文档内容和使用指南"
+                                  };
+                                  
+                                  // Create a form and submit it to open the reference creation modal
+                                  const form = document.createElement('form');
+                                  form.method = 'post';
+                                  form.style.display = 'none';
+                                  
+                                  // Add form data
+                                  Object.entries(refData).forEach(([key, value]) => {
+                                    const input = document.createElement('input');
+                                    input.type = 'hidden';
+                                    input.name = key;
+                                    input.value = value;
+                                    form.appendChild(input);
+                                  });
+                                  
+                                  // Add intent
+                                  const intentInput = document.createElement('input');
+                                  intentInput.type = 'hidden';
+                                  intentInput.name = 'intent';
+                                  intentInput.value = 'prefill_reference_creation';
+                                  form.appendChild(intentInput);
+                                  
+                                  document.body.appendChild(form);
+                                  form.submit();
                                 }}
                               >
                                 Quick Create

@@ -254,7 +254,7 @@ Please respond with a JSON object containing exactly these three fields:
    - Define the agent's role, responsibilities, and capabilities clearly
    - Reference tools using format: [{tool_name}](toolid_{id})
    - Reference documents using format: [{ref_name}](refid_{id})
-   - For missing tools/references not in the available list, use id=0: [{missing_name}](toolid_0) or [{missing_name}](refid_0)
+   - For missing tools/references not in the available list, use id=0 with specific meaningful names: [{具体工具名称}](toolid_0) or [{具体参考资料名称}](refid_0)
    - Follow a structured workflow with clear phases and steps
    - Include specific instructions for using tools and references
 
@@ -264,11 +264,13 @@ Please respond with a JSON object containing exactly these three fields:
    - How the tools and references work together
    - Why certain phases are ordered this way
 
-3. **recommendations**: Array of suggestions including:
+3. **recommendations**: Array of strings, each recommendation as a separate item including:
    - Improvements for existing tools (usage instructions, default values)
    - Missing tools or references that would enhance the workflow (with descriptions)
    - Best practices that should be documented
    - Any gaps in the current tool/reference set
+   
+   **Important**: Return recommendations as an array of strings, not as a single string with line breaks.
 
 ## Example Format for result field:
 Generate content similar to this structure but adapted to your specific requirements:
@@ -317,7 +319,7 @@ Please respond with a JSON object containing exactly these three fields:
    - Define clear phases and steps with specific objectives
    - Reference tools using format: [{tool_name}](toolid_{id})
    - Reference documents using format: [{ref_name}](refid_{id})
-   - For missing tools/references not in the available list, use id=0: [{missing_name}](toolid_0) or [{missing_name}](refid_0)
+   - For missing tools/references not in the available list, use id=0 with specific meaningful names: [{具体工具名称}](toolid_0) or [{具体参考资料名称}](refid_0)
    - Include dependencies between steps
    - Specify error handling and validation points
    - Provide clear success criteria for each phase
@@ -328,11 +330,13 @@ Please respond with a JSON object containing exactly these three fields:
    - How different phases connect and depend on each other
    - Risk mitigation strategies built into the workflow
 
-3. **recommendations**: Array of suggestions including:
+3. **recommendations**: Array of strings, each recommendation as a separate item including:
    - Improvements for existing tools (usage patterns, configurations)
    - Missing tools or references that would enhance the workflow
    - Additional validation steps or checkpoints
    - Alternative workflow approaches to consider
+   
+   **Important**: Return recommendations as an array of strings, not as a single string with line breaks.
 
 ## Example Format for result field:
 Generate content similar to this structure but adapted to your specific workflow requirements:
@@ -447,7 +451,7 @@ Focus on creating a practical, step-by-step workflow that can be reliably execut
       return {
         result: parsed.result || "Failed to generate prompt content",
         reason: parsed.reason || "No reasoning provided",
-        recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [parsed.recommendations || "No recommendations provided"],
+        recommendations: this.parseRecommendations(parsed.recommendations),
         configuration: {
           tools: request.tools,
           references: request.references,
@@ -489,14 +493,87 @@ Focus on creating a practical, step-by-step workflow that can be reliably execut
     const matches = [...content.matchAll(regex)];
     const uniqueNames = [...new Set(matches.map(match => match[1]))];
     
-    return uniqueNames.map(name => ({
-      name,
-      description: `${type === "tool" ? "工具" : "参考文档"}: ${name}`,
-      ...(type === "tool" ? { usage: "请提供使用说明" } : { 
-        category: "best-practice", 
-        content: "请提供文档内容" 
-      })
-    }));
+    return uniqueNames.map(name => {
+      if (type === "tool") {
+        // 根据工具名称智能推测描述和用法
+        let description = "";
+        let usage = "";
+        
+        if (name.toLowerCase().includes("sonarqube") || name.toLowerCase().includes("代码质量")) {
+          description = "代码质量分析工具，用于检测代码漏洞、安全问题和技术债务";
+          usage = "通过配置质量门禁规则，对代码进行静态分析和质量评估";
+        } else if (name.toLowerCase().includes("eslint") || name.toLowerCase().includes("lint")) {
+          description = "JavaScript/TypeScript代码风格检查工具";
+          usage = "通过配置规则文件，对代码进行语法和风格检查";
+        } else if (name.toLowerCase().includes("scanner") || name.toLowerCase().includes("扫描")) {
+          description = "安全扫描工具，用于检测安全漏洞和合规性问题";
+          usage = "配置扫描规则和目标，执行自动化安全检测";
+        } else if (name.toLowerCase().includes("git") || name.toLowerCase().includes("版本")) {
+          description = "版本控制工具，用于代码管理和协作开发";
+          usage = "通过命令行或图形界面进行代码提交、分支管理等操作";
+        } else {
+          description = `${name} - 专业工具，用于支持特定的开发或分析任务`;
+          usage = "请根据具体需求配置和使用该工具";
+        }
+        
+        return { name, description, usage };
+      } else {
+        // 参考资料的智能推测
+        let description = "";
+        let category = "best-practice";
+        let content = "";
+        
+        if (name.toLowerCase().includes("template") || name.toLowerCase().includes("模板")) {
+          description = `${name} - 标准化模板文档，提供规范的格式和流程指导`;
+          category = "template";
+          content = "请提供具体的模板内容和使用说明";
+        } else if (name.toLowerCase().includes("best") || name.toLowerCase().includes("最佳")) {
+          description = `${name} - 最佳实践指南，包含经验总结和推荐做法`;
+          category = "best-practice";
+          content = "请提供具体的最佳实践内容和实施建议";
+        } else if (name.toLowerCase().includes("security") || name.toLowerCase().includes("安全")) {
+          description = `${name} - 安全相关文档，提供安全规范和防护措施`;
+          category = "security";
+          content = "请提供具体的安全规范和实施要求";
+        } else {
+          description = `${name} - 专业参考文档，提供相关领域的指导和规范`;
+          content = "请提供具体的文档内容和使用指南";
+        }
+        
+        return { name, description, category, content };
+      }
+    });
+  }
+
+  private parseRecommendations(recommendations: any): string[] {
+    if (Array.isArray(recommendations)) {
+      return recommendations.filter(rec => rec && typeof rec === 'string');
+    }
+    
+    if (typeof recommendations === 'string') {
+      // 如果是字符串，尝试按行分割或按数字编号分割
+      const lines = recommendations.split('\n').filter(line => line.trim());
+      
+      // 检查是否有编号格式 (1. 2. 3. 或 - )
+      const hasNumbering = lines.some(line => /^[\d]+\.\s/.test(line.trim()) || /^-\s/.test(line.trim()));
+      
+      if (hasNumbering) {
+        return lines.map(line => {
+          // 移除编号前缀
+          return line.replace(/^[\d]+\.\s*/, '').replace(/^-\s*/, '').trim();
+        }).filter(line => line.length > 0);
+      } else {
+        // 如果没有明显的分割符，按句号分割
+        const sentences = recommendations.split(/[。\.]\s*/).filter(s => s.trim().length > 0);
+        if (sentences.length > 1) {
+          return sentences.map(s => s.trim() + (s.endsWith('.') || s.endsWith('。') ? '' : ''));
+        }
+        // 否则作为单个建议返回
+        return [recommendations.trim()];
+      }
+    }
+    
+    return ["No recommendations provided"];
   }
 
   private parseWorkflowResponse(response: string, request: AgentGenerationRequest): AgentGenerationResponse {
@@ -510,7 +587,7 @@ Focus on creating a practical, step-by-step workflow that can be reliably execut
       return {
         result: parsed.result || "Failed to generate workflow content",
         reason: parsed.reason || "No reasoning provided",
-        recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [parsed.recommendations || "No recommendations provided"],
+        recommendations: this.parseRecommendations(parsed.recommendations),
         configuration: {
           tools: request.tools,
           references: request.references,

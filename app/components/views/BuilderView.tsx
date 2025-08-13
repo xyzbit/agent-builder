@@ -7,6 +7,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "~/components/ui/dropdown-menu";
 import { safeLucideIcon } from "~/components/ui/icon";
 import { cn } from "~/lib/utils";
 import type { Tool, Reference, GenerationType } from "~/types";
@@ -121,7 +122,53 @@ export function BuilderView({
             </div>
 
             <div className="space-y-2">
-              <Label className="text-cli-yellow font-mono">Task Requirements</Label>
+              <div className="relative">
+                <Label className="text-cli-yellow font-mono">Task Requirements</Label>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute top-0 right-0 h-6 px-2 text-xs text-cli-coral hover:text-cli-yellow hover:bg-cli-bg/30 font-mono"
+                    >
+                      {safeLucideIcon('BookOpen', 'h-3 w-3 mr-1')}
+                      Reference
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64 bg-cli-bg border-cli-teal/30">
+                    {references.filter(ref => ref.category === 'best_practice').map((reference) => (
+                      <DropdownMenuItem
+                        key={reference.id}
+                        className="text-cli-teal hover:bg-cli-bg/50 font-mono text-xs cursor-pointer"
+                        onClick={() => {
+                          const textarea = document.querySelector('textarea[name="taskRequirements"]') as HTMLTextAreaElement;
+                          if (textarea && reference.content) {
+                            const currentValue = textarea.value;
+                            const newValue = currentValue + (currentValue ? '\n\n' : '') + reference.content;
+                            textarea.value = newValue;
+                            textarea.focus();
+                          }
+                        }}
+                      >
+                        <div className="flex flex-col gap-1">
+                          <span className="font-semibold">{reference.name}</span>
+                          {reference.description && (
+                            <span className="text-cli-coral/70 text-xs">
+                              {reference.description.length > 50 ? `${reference.description.substring(0, 50)}...` : reference.description}
+                            </span>
+                          )}
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                    {references.filter(ref => ref.category === 'best_practice').length === 0 && (
+                      <DropdownMenuItem disabled className="text-cli-coral/50 font-mono text-xs">
+                        No best practice references available
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
               <Textarea
                 name="taskRequirements"
                 placeholder="Describe what this agent/workflow should accomplish. Be specific about inputs, outputs, and expected behavior."

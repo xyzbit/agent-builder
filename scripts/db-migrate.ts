@@ -28,11 +28,15 @@ function runCommand(command) {
 async function main() {
   console.log("Running initial database migration...");
 
-  try {
-    await reset();
-  } catch (error) {
-    console.error("❌ Reset failed");
-    console.error(error);
+  // Only reset if explicitly requested via environment variable
+  if (process.env.FORCE_DB_RESET === 'true') {
+    console.log("🚨 FORCE_DB_RESET is set - resetting database...");
+    try {
+      await reset();
+    } catch (error) {
+      console.error("❌ Reset failed");
+      console.error(error);
+    }
   }
 
   const firstAttempt = runCommand("pnpm drizzle-kit push");

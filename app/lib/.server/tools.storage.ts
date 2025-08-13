@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { eq, desc, ilike } from "drizzle-orm";
+import { eq, desc, ilike, sql } from "drizzle-orm";
 import { db } from "~/drizzle/config.server";
 import {
   type Tool,
@@ -32,11 +32,20 @@ export class ToolsStorage implements IToolsStorage {
 
     try {
       console.log("[ToolsStorage] Starting sample data initialization...");
+      
+      // Check if the tools table exists
+      const tableExists = await this.client.execute(
+        sql`SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'tools'
+        )`
+      );
+      
+      const exists = tableExists.rows[0]?.exists;
+      console.log("[ToolsStorage] Tools table exists: " + exists);
 
-      const existingTools = await this.client.select().from(toolsTable).limit(1);
-      console.log("[ToolsStorage] Found " + existingTools.length + " existing tools");
-
-      if (existingTools.length === 0) {
+      if (!exists) {
         console.log("[ToolsStorage] No existing tools found, creating sample data...");
 
         const sampleTools = [

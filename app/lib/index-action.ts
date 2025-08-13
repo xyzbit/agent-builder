@@ -552,6 +552,43 @@ export const createAction = async ({ request }: ActionFunctionArgs) => {
         });
       }
 
+      case "install_agent": {
+        const data = JSON.parse(formData.get("data") as string);
+        const { agentId, platform, level, agentData } = data;
+
+        try {
+          // Get agent with tools
+          const agentWithTools = await agentsStorage.getAgentWithTools(agentId);
+          if (!agentWithTools) {
+            return json({
+              error: "Agent not found",
+              success: false
+            }, { status: 404 });
+          }
+
+          // Generate installation files
+          const installationFiles = await generateInstallationFiles({
+            agent: agentWithTools,
+            platform,
+            level,
+            refsStorage,
+            toolsStorage
+          });
+
+          return json({
+            success: true,
+            message: "Installation files generated successfully",
+            files: installationFiles
+          });
+        } catch (error) {
+          console.error("Installation error:", error);
+          return json({
+            error: "Failed to generate installation files: " + (error instanceof Error ? error.message : String(error)),
+            success: false
+          }, { status: 500 });
+        }
+      }
+
       default:
         return json({
           error: "Unknown action",
@@ -566,3 +603,160 @@ export const createAction = async ({ request }: ActionFunctionArgs) => {
     }, { status: 500 });
   }
 };
+
+// Helper functions for installation
+async function generateInstallationFiles({ agent, platform, level, refsStorage, toolsStorage }: {
+  agent: any;
+  platform: 'cursor' | 'trae';
+  level: 'user' | 'project';
+  refsStorage: any;
+  toolsStorage: any;
+}) {
+  const files: Array<{ filename: string; content: string; mimeType: string }> = [];
+  
+  // Get file extension based on platform
+  const fileExtension = platform === 'cursor' ? '.mdc' : '.md';
+  
+  // Extract reference IDs from agent's generated prompt
+  const referenceIds = extractReferenceIds(agent.generatedPrompt || '');
+  const toolIds = extractToolIds(agent.generatedPrompt || '');
+  
+  // Get references and tools data
+  const [references, tools] = await Promise.all([
+    Promise.all(referenceIds.map(id => refsStorage.getReferenceById(id))),
+    Promise.all(toolIds.map(id => toolsStorage.getToolById(id)))
+  ]);
+  
+  // Filter out null values
+  const validReferences = references.filter(ref => ref !== null);
+  const validTools = tools.filter(tool => tool !== null);
+  
+  // Generate reference files
+  for (const reference of validReferences) {
+    const filename = `${sanitizeFilename(reference.name)}${fileExtension}`;
+    files.push({
+      filename,
+      content: reference.content,
+      mimeType: 'text/markdown'
+    });
+  }
+  
+  // Generate tool files
+  for (const tool of validTools) {
+    const filename = `${sanitizeFilename(tool.name)}${fileExtension}`;
+    const content = generateToolContent(tool);
+    files.push({
+      filename,
+      content,
+      mimeType: 'text/markdown'
+    });
+  }
+  
+  // Generate prompt file
+  if (agent.generatedPrompt) {
+    const promptFilename = `${sanitizeFilename(agent.name)}_prompt${fileExtension}`;
+    files.push({
+      filename: promptFilename,
+      content: agent.generatedPrompt,
+      mimeType: 'text/markdown'
+    });
+  }
+  
+  // Generate MCP configuration if there are MCP tools
+  const mcpTools = validTools.filter(tool => tool.toolType === 'mcp');
+  if (mcpTools.length > 0) {
+    const mcpConfig = generateMcpConfig(mcpTools);
+    files.push({
+      filename: 'mcp.json',
+      content: JSON.stringify(mcpConfig, null, 2),
+      mimeType: 'application/json'
+    });
+  }
+  
+  return files;
+}
+
+function extractReferenceIds(content: string): number[] {
+  const regex = /\[([^\]]+)\]\(refid_(\d+)\)/g;
+  const ids: number[] = [];
+  let match;
+  
+  while ((match = regex.exec(content)) !== null) {
+    const id = parseInt(match[2]);
+    if (id > 0 && !ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+  
+  return ids;
+}
+
+function extractToolIds(content: string): number[] {
+  const regex = /\[([^\]]+)\]\(toolid_(\d+)\)/g;
+  const ids: number[] = [];
+  let match;
+  
+  while ((match = regex.exec(content)) !== null) {
+    const id = parseInt(match[2]);
+    if (id > 0 && !ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+  
+  return ids;
+}
+
+function sanitizeFilename(name: string): string {
+  return name
+    .replace(/[^a-zA-Z0-9\u4e00-\u9fff\s-_]/g, '') // Keep Chinese characters, letters, numbers, spaces, hyphens, underscores
+    .replace(/\s+/g, '_') // Replace spaces with underscores
+    .trim();
+}
+
+function generateToolContent(tool: any): string {
+  return `# ${tool.name}
+
+## 描述
+${tool.description}
+
+## 分类
+${tool.category}
+
+## 工具类型
+${tool.toolType}
+
+${tool.usage ? `## 使用方法
+${tool.usage}` : ''}
+
+## 状态
+${tool.isActive ? '已启用' : '已禁用'}
+
+---
+*生成时间: ${new Date().toLocaleString('zh-CN')}*
+`;
+}
+
+function generateMcpConfig(mcpTools: any[]): any {
+  const mcpServers: Record<string, any> = {};
+  
+  for (const tool of mcpTools) {
+    // 根据工具名称生成MCP配置
+    const serverName = sanitizeFilename(tool.name).toLowerCase();
+    
+    // 这里需要根据具体的工具配置生成相应的MCP配置
+    // 示例配置基于install.md中的openmemory配置
+    mcpServers[serverName] = {
+      command: "npx",
+      args: ["-y", tool.name.toLowerCase()],
+      env: {
+        // 根据工具类型和名称生成环境变量
+        [`${tool.name.toUpperCase()}_API_KEY`]: "your-api-key-here",
+        "CLIENT_NAME": "cursor"
+      }
+    };
+  }
+  
+  return {
+    mcpServers
+  };
+}

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { eq, desc, ilike, and } from "drizzle-orm";
+import { eq, desc, ilike, and, sql } from "drizzle-orm";
 import { db } from "~/drizzle/config.server";
 import {
   type Reference,
@@ -34,10 +34,19 @@ export class RefsStorage implements IRefsStorage {
     try {
       console.log("[RefsStorage] Starting sample data initialization...");
 
-      const existingRefs = await this.client.select().from(referencesTable).limit(1);
-      console.log("[RefsStorage] Found " + existingRefs.length + " existing references");
+      // Check if the references table exists
+      const tableExists = await this.client.execute(
+        sql`SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'references'
+        )`
+      );
+      
+      const exists = tableExists.rows[0]?.exists;
+      console.log("[RefsStorage] References table exists: " + exists);
 
-      if (existingRefs.length === 0) {
+      if (!exists) {
         console.log("[RefsStorage] No existing references found, creating sample data...");
 
         const sampleReferences = [

@@ -247,8 +247,9 @@ ${availableToolsInfo}
 **可用References**:
 ${availableReferencesInfo}
 
-## Output Requirements:
-Please respond with a JSON object containing exactly these three fields:
+## CRITICAL: You MUST respond with a valid JSON object only. Do not include any markdown, explanations, or additional text before or after the JSON.
+
+The JSON object must contain exactly these three fields:
 
 1. **result**: Generate a detailed prompt for the agent. The prompt should:
    - Define the agent's role, responsibilities, and capabilities clearly
@@ -269,28 +270,15 @@ Please respond with a JSON object containing exactly these three fields:
    - Missing tools or references that would enhance the workflow (with descriptions)
    - Best practices that should be documented
    - Any gaps in the current tool/reference set
-   
-   **Important**: Return recommendations as an array of strings, not as a single string with line breaks.
 
-## Example Format for result field:
-Generate content similar to this structure but adapted to your specific requirements:
+## Expected JSON Response Format:
+{
+  "result": "你是一个[角色定义]，擅长[核心能力]。\n\n## 1. [阶段名称]\n本阶段的目的：[阶段目标]\n\n在开始本阶段工作前，请再次确认并充分理解 [{reference_name}](refid_{id}) 中的指导原则。\n使用 [{tool_name}](toolid_{id}) 工具来[具体用途]。\n\n[具体步骤和指导...]\n\n## 2. [下一阶段]\n[继续其他阶段...]",
+  "reason": "Explanation of design decisions...",
+  "recommendations": ["Recommendation 1", "Recommendation 2", "Recommendation 3"]
+}
 
-\`\`\`markdown
-你是一个[角色定义]，擅长[核心能力]。
-
-## 1. [阶段名称]
-本阶段的目的：[阶段目标]
-
-在开始本阶段工作前，请再次确认并充分理解 [{reference_name}](refid_{id}) 中的指导原则。
-使用 [{tool_name}](toolid_{id}) 工具来[具体用途]。
-
-[具体步骤和指导...]
-
-## 2. [下一阶段]
-[继续其他阶段...]
-\`\`\`
-
-Focus on creating a practical, step-by-step agent that can handle the specified task effectively.
+IMPORTANT: Respond with ONLY the JSON object. No additional text, markdown formatting, or explanations outside the JSON.
 `;
   }
 
@@ -335,40 +323,17 @@ Please respond with a JSON object containing exactly these three fields:
    - Missing tools or references that would enhance the workflow
    - Additional validation steps or checkpoints
    - Alternative workflow approaches to consider
-   
-   **Important**: Return recommendations as an array of strings, not as a single string with line breaks.
 
-## Example Format for result field:
-Generate content similar to this structure but adapted to your specific workflow requirements:
+## CRITICAL: You MUST respond with a valid JSON object only. Do not include any markdown, explanations, or additional text before or after the JSON.
 
-\`\`\`markdown
-你是一个[工作流角色]，负责[主要职责]。
+## Expected JSON Response Format:
+{
+  "result": "你是一个[工作流角色]，负责[主要职责]。\n\n## 工作流概述\n本工作流包含[X]个主要阶段，旨在[工作流目标]。\n\n## 阶段1: [阶段名称]\n**目标**: [阶段目标]\n**前置条件**: [前置要求]\n\n参考 [{reference_name}](refid_{id}) 中的指导原则。\n使用 [{tool_name}](toolid_{id}) 工具进行[具体操作]。\n\n**步骤**:\n1. [具体步骤]\n2. [验证点]\n\n**成功标准**: [如何判断此阶段完成]\n\n## 阶段2: [下一阶段]\n[继续其他阶段...]\n\n## 错误处理\n- [错误情况1]: [处理方式]\n- [错误情况2]: [处理方式]",
+  "reason": "Explanation of workflow design decisions...",
+  "recommendations": ["Recommendation 1", "Recommendation 2", "Recommendation 3"]
+}
 
-## 工作流概述
-本工作流包含[X]个主要阶段，旨在[工作流目标]。
-
-## 阶段1: [阶段名称]
-**目标**: [阶段目标]
-**前置条件**: [前置要求]
-
-参考 [{reference_name}](refid_{id}) 中的指导原则。
-使用 [{tool_name}](toolid_{id}) 工具进行[具体操作]。
-
-**步骤**:
-1. [具体步骤]
-2. [验证点]
-
-**成功标准**: [如何判断此阶段完成]
-
-## 阶段2: [下一阶段]
-[继续其他阶段...]
-
-## 错误处理
-- [错误情况1]: [处理方式]
-- [错误情况2]: [处理方式]
-\`\`\`
-
-Focus on creating a practical, step-by-step workflow that can be reliably executed.
+IMPORTANT: Respond with ONLY the JSON object. No additional text, markdown formatting, or explanations outside the JSON.
 `;
   }
 
@@ -395,7 +360,9 @@ Focus on creating a practical, step-by-step workflow that can be reliably execut
     missingInfo?: string[];
   } {
     try {
-      const parsed = JSON.parse(response);
+      // Clean response by removing any markdown code blocks that might wrap the JSON
+      const cleanedResponse = this.cleanResponseForJSON(response);
+      const parsed = JSON.parse(cleanedResponse);
       return {
         selectedTools: parsed.selectedTools || [],
         selectedReferences: parsed.selectedReferences || [],
@@ -442,7 +409,9 @@ Focus on creating a practical, step-by-step workflow that can be reliably execut
 
   private parseAgentResponse(response: string, request: AgentGenerationRequest): AgentGenerationResponse {
     try {
-      const parsed = JSON.parse(response);
+      // Clean response by removing any markdown code blocks that might wrap the JSON
+      const cleanedResponse = this.cleanResponseForJSON(response);
+      const parsed = JSON.parse(cleanedResponse);
       
       // Extract missing tools and references from the result
       const missingTools = this.extractMissingItems(parsed.result || "", "toolid_0", "tool");
@@ -576,9 +545,113 @@ Focus on creating a practical, step-by-step workflow that can be reliably execut
     return ["No recommendations provided"];
   }
 
+  private cleanResponseForJSON(response: string): string {
+    // Remove markdown code block delimiters that might wrap the JSON
+    let cleaned = response.trim();
+    
+    // Remove starting markdown code block markers (```json, ```markdown, ```, etc.)
+    cleaned = cleaned.replace(/^```(?:json|markdown|js|javascript|text)?\s*/i, '');
+    
+    // Remove ending markdown code block markers
+    cleaned = cleaned.replace(/\s*```\s*$/i, '');
+    
+    // Find the first { and last } to extract just the JSON object
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    
+    if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+    }
+    
+    // Clean control characters that cause JSON parsing errors
+    // Remove all control characters except \n (10), \r (13), \t (9)
+    cleaned = cleaned.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+    
+    // Properly escape newlines and other characters in JSON strings
+    // This handles cases where AI generates multi-line strings without proper escaping
+    cleaned = this.fixJSONStringEscaping(cleaned);
+    
+    return cleaned;
+  }
+  
+  private fixJSONStringEscaping(jsonStr: string): string {
+    try {
+      // First attempt: try to parse as-is
+      JSON.parse(jsonStr);
+      return jsonStr;
+    } catch (error) {
+      // If parsing fails, try to fix common issues
+      let fixed = jsonStr;
+      
+      // Fix unescaped newlines in string values using a more comprehensive approach
+       // This handles multi-line strings by finding complete string values and escaping newlines
+       fixed = fixed.replace(/"([^"]*(?:\\.[^"]*)*)"/g, (match, content) => {
+         // Escape unescaped newlines within the string content
+         // Use a simpler approach since JavaScript doesn't support negative lookbehind in all environments
+         let escapedContent = content;
+         
+         // First, temporarily replace already escaped sequences
+         const tempMarker = '__TEMP_ESCAPE__';
+         escapedContent = escapedContent.replace(/\\n/g, tempMarker + 'n');
+         escapedContent = escapedContent.replace(/\\r/g, tempMarker + 'r');
+         escapedContent = escapedContent.replace(/\\t/g, tempMarker + 't');
+         
+         // Now escape unescaped newlines
+         escapedContent = escapedContent.replace(/\n/g, '\\n');
+         escapedContent = escapedContent.replace(/\r/g, '\\r');
+         escapedContent = escapedContent.replace(/\t/g, '\\t');
+         
+         // Restore the already escaped sequences
+         escapedContent = escapedContent.replace(new RegExp(tempMarker + 'n', 'g'), '\\n');
+         escapedContent = escapedContent.replace(new RegExp(tempMarker + 'r', 'g'), '\\r');
+         escapedContent = escapedContent.replace(new RegExp(tempMarker + 't', 'g'), '\\t');
+         
+         return `"${escapedContent}"`;
+       });
+      
+      // Fix unescaped backslashes (but not already escaped ones)
+      fixed = fixed.replace(/"([^"]*?)\\([^"nrt\\\/"])/g, '"$1\\\\$2');
+      
+      // Try parsing again
+      try {
+        JSON.parse(fixed);
+        return fixed;
+      } catch (secondError) {
+        // If still failing, try a more aggressive approach
+        console.warn('First JSON fix attempt failed, trying aggressive fix:', secondError.message);
+        
+        // More aggressive fix: replace all problematic characters in string values
+        let aggressiveFix = jsonStr;
+        
+        // Find all string values and clean them
+        aggressiveFix = aggressiveFix.replace(/"([^"]*)"/g, (match, content) => {
+          const cleanContent = content
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r')
+            .replace(/\t/g, '\\t')
+            .replace(/\\/g, '\\\\')
+            .replace(/"/g, '\\"');
+          return `"${cleanContent}"`;
+        });
+        
+        try {
+          JSON.parse(aggressiveFix);
+          return aggressiveFix;
+        } catch (thirdError) {
+          console.error('All JSON fixing attempts failed:', thirdError.message);
+          console.error('Original error:', error.message);
+          console.error('Problematic JSON:', jsonStr.substring(0, 200) + '...');
+          return jsonStr;
+        }
+      }
+    }
+  }
+
   private parseWorkflowResponse(response: string, request: AgentGenerationRequest): AgentGenerationResponse {
     try {
-      const parsed = JSON.parse(response);
+      // Clean response by removing any markdown code blocks that might wrap the JSON
+      const cleanedResponse = this.cleanResponseForJSON(response);
+      const parsed = JSON.parse(cleanedResponse);
       
       // Extract missing tools and references from the result
       const missingTools = this.extractMissingItems(parsed.result || "", "toolid_0", "tool");

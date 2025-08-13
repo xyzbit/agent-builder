@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { safeLucideIcon } from "~/components/ui/icon";
 import { cn } from "~/lib/utils";
+import { InstallModal } from "~/components/modals/InstallModal";
 import type { Agent, ActiveView } from "~/types";
 
 interface AgentsViewProps {
@@ -12,6 +14,15 @@ interface AgentsViewProps {
 }
 
 export function AgentsView({ agents, setActiveView, setSelectedAgent }: AgentsViewProps) {
+  const [installAgent, setInstallAgent] = useState<Agent | null>(null);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+
+  const handleInstallClick = (e: React.MouseEvent, agent: Agent) => {
+    e.stopPropagation(); // Prevent card click
+    setInstallAgent(agent);
+    setIsInstallModalOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -66,11 +77,33 @@ export function AgentsView({ agents, setActiveView, setSelectedAgent }: AgentsVi
                     {new Date(agent.createdAt).toLocaleDateString()}
                   </span>
                 </div>
+                
+                {/* Install Button */}
+                <div className="mt-3 pt-3 border-t border-cli-teal/20">
+                  <Button
+                    size="sm"
+                    onClick={(e) => handleInstallClick(e, agent)}
+                    className="w-full bg-cli-coral hover:bg-cli-coral/80 text-white font-mono text-xs shadow-cli-glow"
+                  >
+                    {safeLucideIcon('Download', 'mr-2 h-3 w-3')}
+                    安装
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
+
+      {/* Install Modal */}
+      <InstallModal
+        agent={installAgent}
+        isOpen={isInstallModalOpen}
+        onClose={() => {
+          setIsInstallModalOpen(false);
+          setInstallAgent(null);
+        }}
+      />
     </div>
   );
 }

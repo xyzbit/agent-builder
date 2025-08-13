@@ -40,10 +40,19 @@ export class BestPracticesStorage implements IBestPracticesStorage {
     try {
       console.log("[BestPracticesStorage] Starting sample data initialization...");
       
-      const existingPractices = await this.client.select().from(bestPracticesTable).limit(1);
-      console.log("[BestPracticesStorage] Found " + existingPractices.length + " existing practices");
+      // Check if the best_practices table exists
+      const tableExists = await this.client.execute(
+        sql`SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'best_practices'
+        )`
+      );
+      
+      const exists = tableExists.rows[0]?.exists;
+      console.log("[BestPracticesStorage] Best practices table exists: " + exists);
 
-      if (existingPractices.length === 0) {
+      if (!exists) {
         console.log("[BestPracticesStorage] No existing practices found, creating sample data...");
         
         const samplePractices = [

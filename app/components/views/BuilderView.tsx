@@ -10,8 +10,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/component
 import { safeLucideIcon } from "~/components/ui/icon";
 import { cn } from "~/lib/utils";
 import type { Tool, Reference, GenerationType } from "~/types";
-import { useState, useRef } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "~/components/ui/dialog";
+import { useState } from "react";
 
 interface BuilderViewProps {
   tools: Tool[];
@@ -43,16 +42,6 @@ export function BuilderView({
   actionData
 }: BuilderViewProps) {
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
-  const [isReferenceDialogOpen, setIsReferenceDialogOpen] = useState(false);
-  const taskRequirementsRef = useRef<HTMLTextAreaElement>(null);
-  
-  // Filter best practice references
-  const bestPracticeReferences = references.filter(ref => 
-    ref.category.toLowerCase().includes('best practice') || 
-    ref.category.toLowerCase().includes('best-practice') ||
-    ref.category.toLowerCase().includes('best_practice') ||
-    ref.category.toLowerCase().includes('bestpractice')
-  );
   return (
     <div className="space-y-6">
       <div className="text-center space-y-4">
@@ -132,79 +121,8 @@ export function BuilderView({
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-cli-yellow font-mono">Task Requirements</Label>
-                <Dialog open={isReferenceDialogOpen} onOpenChange={setIsReferenceDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="bg-cli-bg/50 border-cli-teal/30 text-cli-teal font-mono hover:bg-cli-teal/10 hover:border-cli-teal"
-                    >
-                      {safeLucideIcon('BookOpen', 'h-4 w-4 mr-1')}
-                      Reference
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="bg-cli-terminal border-cli-teal/30 max-w-2xl max-h-[80vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle className="text-cli-teal font-mono">Best Practice References</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <p className="text-cli-yellow font-mono text-sm">
-                        Click "Insert" to add reference content directly to your task requirements:
-                      </p>
-                      <div className="grid gap-3 max-h-96 overflow-y-auto">
-                        {bestPracticeReferences.length > 0 ? (
-                          bestPracticeReferences.map((reference) => (
-                            <div key={reference.id} className="p-3 bg-cli-bg/30 rounded-lg border border-cli-teal/20 hover:border-cli-teal/40 transition-colors">
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <h4 className="text-cli-teal font-mono font-semibold text-sm">{reference.name}</h4>
-                                  {reference.description && (
-                                    <p className="text-cli-coral/70 font-mono text-xs mt-1">
-                                      {reference.description}
-                                    </p>
-                                  )}
-                                  <span className="inline-block px-2 py-0.5 text-xs bg-cli-terminal/50 text-cli-yellow rounded mt-2">
-                                    {reference.category}
-                                  </span>
-                                </div>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="ml-2 bg-cli-bg/50 border-cli-coral/30 text-cli-coral font-mono hover:bg-cli-coral/10"
-                                  onClick={() => {
-                                    if (taskRequirementsRef.current && reference.content) {
-                                      const textarea = taskRequirementsRef.current;
-                                      const currentValue = textarea.value;
-                                      const newValue = currentValue ? `${currentValue}\n\n${reference.content}` : reference.content;
-                                      textarea.value = newValue;
-                                      textarea.focus();
-                                    }
-                                    setIsReferenceDialogOpen(false);
-                                  }}
-                                >
-                                  Insert
-                                </Button>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-center py-8">
-                            <p className="text-cli-coral/70 font-mono text-sm">
-                              No best practice references available.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
+              <Label className="text-cli-yellow font-mono">Task Requirements</Label>
               <Textarea
-                ref={taskRequirementsRef}
                 name="taskRequirements"
                 placeholder="Describe what this agent/workflow should accomplish. Be specific about inputs, outputs, and expected behavior."
                 rows={4}

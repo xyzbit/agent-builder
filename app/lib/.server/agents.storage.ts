@@ -39,10 +39,19 @@ export class AgentsStorage implements IAgentsStorage {
     try {
       console.log("[AgentsStorage] Starting sample data initialization...");
       
-      const existingAgents = await this.client.select().from(agentsTable).limit(1);
-      console.log("[AgentsStorage] Found " + existingAgents.length + " existing agents");
+      // Check if the agents table exists
+      const tableExists = await this.client.execute(
+        sql`SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'agents'
+        )`
+      );
+      
+      const exists = tableExists.rows[0]?.exists;
+      console.log("[AgentsStorage] Agents table exists: " + exists);
 
-      if (existingAgents.length === 0) {
+      if (!exists) {
         console.log("[AgentsStorage] No existing agents found, creating sample data...");
         
         const sampleAgents = [

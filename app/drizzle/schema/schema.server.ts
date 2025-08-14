@@ -10,10 +10,6 @@ export const usersTable = pgTable("users", {
   password: text().notNull(),
 });
 
-export const stripeCustomersTable = pgTable("stripe_customers", {
-  userId: integer().primaryKey(),
-  customerId: text().notNull(),
-});
 
 // Agent/Workflow Configuration Tables
 export const agentTypesEnum = pgEnum("agent_types", ["agent", "workflow"]);
@@ -76,8 +72,6 @@ export const executionLogsTable = pgTable("execution_logs", {
 // Export user session schemas
 export * from "./user-sessions.schema.server";
 
-// Export best practices schemas
-export * from "./best-practices.schema.server";
 
 // Export refs schemas
 export * from "./refs.schema.server";

@@ -397,10 +397,7 @@ export const loader: LoaderFunction = async ({ request }) => {
               ? Object.entries(tableRef)
                   .filter(([_, column]) => column.dataType === "string")
                   .map(([key]) => {
-                    const colKey =
-                      tableName !== "stripeCustomersTable"
-                        ? toSnakeCase(key)
-                        : [key];
+                    const colKey = toSnakeCase(key);
                     return ilike(
                       sql`${sql.identifier(colKey)}::text`,
                       `%${searchTerm}%`,

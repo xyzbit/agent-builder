@@ -36,6 +36,13 @@
       "when": 1754915881613,
       "tag": "0004_blushing_rocket_raccoon",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1755133858812,
+      "tag": "0005_normal_rocket_racer",
+      "breakpoints": true
     }
   ]
 }
